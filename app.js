@@ -7,7 +7,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 
 // ---------------------- LOAD ENV ---------------------- //
-dotenv.config({ path: ".env" });
+dotenv.config({ path: ".env", quiet: true });
 
 // ---------------------- __dirname FIX ---------------------- //
 const __filename = fileURLToPath(import.meta.url);
