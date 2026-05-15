@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ecommerce-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass redis@123 --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ecommerce-redis-commander
+    restart: always
+    ports:
+      - "8082:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:redis@123
+    depends_on:
+      - redis
+    networks:
+      - ecommerce-network
+
+volumes:
+  redis-data:
+
+networks:
+  ecommerce-network:
+    driver: bridge
