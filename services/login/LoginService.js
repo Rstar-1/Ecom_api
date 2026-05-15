@@ -19,8 +19,6 @@ const parseAddress = (address) => {
   return address;
 };
 
-const validRole = (role) => (ROLES.includes(role) ? role : "user");
-
 const buildSearchFilter = (search = "") => {
   if (!search) return {};
   const term = search.trim();
@@ -35,8 +33,8 @@ const buildSearchFilter = (search = "") => {
       ...(term.toLowerCase() === "active"
         ? [{ status: true }]
         : term.toLowerCase() === "inactive"
-        ? [{ status: false }]
-        : []),
+          ? [{ status: false }]
+          : []),
 
       { "address.street": { $regex: term, $options: "i" } },
       { "address.city": { $regex: term, $options: "i" } },
@@ -47,12 +45,24 @@ const buildSearchFilter = (search = "") => {
   };
 };
 
-const logEvent = async (title, status, message, userId) => {
+const validRole = (role) => (ROLES.includes(role) ? role : "user");
+
+// ✅ UPDATED LOG EVENT
+const logEvent = async (
+  title,
+  status,
+  message,
+  userId,
+  category = "AUTH",
+  updatedFields = [],
+) => {
   await Log.create({
     title,
     status,
     message,
     userId: userId || new mongoose.Types.ObjectId(),
+    category,
+    updatedFields,
   });
 };
 
@@ -97,7 +107,7 @@ export const register = async (req) => {
       fullname,
       email,
       mobileno,
-      password: await bcrypt.hash(password, 10),
+      password,
       image: req.body.image || req.body.picture || "",
       address: parseAddress(req.body.address),
       role: validRole(role),
@@ -110,12 +120,19 @@ export const register = async (req) => {
       newUser.fullname,
       "SUCCESS",
       `User registered: ${userId}`,
-      userId
+      userId,
+      "AUTH_REGISTER",
     );
 
     return newUser;
   } catch (error) {
-    await logEvent("Register User", "FAILURE", error.message, userId);
+    await logEvent(
+      "Register User",
+      "FAILURE",
+      error.message,
+      userId,
+      "AUTH_REGISTER",
+    );
     throw error;
   }
 };
@@ -125,31 +142,102 @@ export const updateUser = async (id, data) => {
   let userId = id;
 
   try {
-    const updateData = {
-      ...data,
-      ...(data.image || data.picture
-        ? { image: data.image || data.picture }
-        : {}),
-      ...(data.password
-        ? { password: await bcrypt.hash(data.password, 10) }
-        : {}),
-      ...(data.role ? { role: validRole(data.role) } : {}),
-      ...(data.address ? { address: parseAddress(data.address) } : {}),
-    };
+    // 1️⃣ Fetch existing user
+    const existingUser = await Auth.findById(id).lean();
+    if (!existingUser) throw new Error("User not found");
 
-    const user = await Auth.findByIdAndUpdate(id, updateData, { new: true });
-    if (!user) throw new Error("User not found");
+    const updateData = {};
 
+    // 2️⃣ Compare & update only changed fields
+
+    if (data.fullname && data.fullname !== existingUser.fullname) {
+      updateData.fullname = data.fullname;
+    }
+
+    if (data.email && data.email !== existingUser.email) {
+      updateData.email = data.email;
+    }
+
+    if (data.mobileno && data.mobileno !== existingUser.mobileno) {
+      updateData.mobileno = data.mobileno;
+    }
+
+    if (data.role) {
+      const role = validRole(data.role);
+      if (role !== existingUser.role) {
+        updateData.role = role;
+      }
+    }
+
+    // ✅ FIXED STATUS COMPARISON (handles string/boolean)
+    if (data.status !== undefined) {
+      const newStatus =
+        typeof data.status === "string"
+          ? data.status === "true"
+          : data.status;
+
+      if (newStatus !== existingUser.status) {
+        updateData.status = newStatus;
+      }
+    }
+
+    if (data.address) {
+      const parsedAddress = parseAddress(data.address);
+      if (
+        JSON.stringify(parsedAddress) !==
+        JSON.stringify(existingUser.address)
+      ) {
+        updateData.address = parsedAddress;
+      }
+    }
+
+    // ✅ Image update (supports image + picture)
+    const newImage = data.image || data.picture;
+    if (newImage && newImage !== existingUser.image) {
+      updateData.image = newImage;
+    }
+
+    // ✅ Password update (only if provided)
+    if (data.password) {
+      updateData.password = await bcrypt.hash(data.password, 10);
+    }
+
+    // 3️⃣ Get updated fields list for logging
+    const updatedFields = Object.keys(updateData);
+
+    // 🚫 Optional: Skip DB call if nothing changed
+    if (updatedFields.length === 0) {
+      return existingUser;
+    }
+
+    // 4️⃣ Update user in DB
+    const user = await Auth.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!user) throw new Error("User not found after update");
+
+    // 5️⃣ Log success
     await logEvent(
       user.fullname,
       "SUCCESS",
       `User updated: ${user._id}`,
-      user._id
+      user._id,
+      "USER_UPDATE",
+      updatedFields
     );
 
     return user;
   } catch (error) {
-    await logEvent("Update User", "FAILURE", error.message, userId);
+    // 6️⃣ Log failure
+    await logEvent(
+      "Update User",
+      "FAILURE",
+      error.message,
+      userId,
+      "USER_UPDATE"
+    );
     throw error;
   }
 };
@@ -172,7 +260,7 @@ export const login = async ({ email, password }) => {
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.SECRET_KEY,
-      { expiresIn: "1d" }
+      { expiresIn: "1d" },
     );
 
     user.password = undefined;
@@ -181,12 +269,19 @@ export const login = async ({ email, password }) => {
       user.fullname,
       "SUCCESS",
       `User login: ${userId}`,
-      userId
+      userId,
+      "AUTH_LOGIN",
     );
 
     return { user, token };
   } catch (error) {
-    await logEvent("Login User", "FAILURE", error.message, userId);
+    await logEvent(
+      "Login User",
+      "FAILURE",
+      error.message,
+      userId,
+      "AUTH_LOGIN",
+    );
     throw error;
   }
 };
@@ -201,13 +296,20 @@ export const logout = async (user) => {
     await logEvent(
       user?.fullname || "Unknown User",
       "SUCCESS",
-      `User logout: ${userId} (${user?.email || "no-email"})`,
-      userId
+      `User logout: ${userId}`,
+      userId,
+      "AUTH_LOGOUT",
     );
 
     return { message: "Logout successful" };
   } catch (error) {
-    await logEvent("Logout User", "FAILURE", error.message, userId);
+    await logEvent(
+      "Logout User",
+      "FAILURE",
+      error.message,
+      userId,
+      "AUTH_LOGOUT",
+    );
     throw error;
   }
 };
