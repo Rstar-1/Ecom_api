@@ -1,5 +1,4 @@
-import { constants } from "../index.js";
-const { statusCodes, messages } = constants;
+import { statusCodes, messages } from "../constants/index.js";
 
 export const errorMiddleware = (err, req, res, next) => {
   console.error("❌ Error:", err);
@@ -8,7 +7,7 @@ export const errorMiddleware = (err, req, res, next) => {
     return next(err);
   }
 
-  /* ================= MULTER ERROR (NO IMPORT) ================= */
+  /* ================= MULTER ERROR ================= */
   if (err.name === "MulterError") {
     return res.status(statusCodes.HTTP_STATUS.BAD_REQUEST).json({
       success: false,

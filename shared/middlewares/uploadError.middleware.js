@@ -1,5 +1,4 @@
-import { constants } from "../index.js";
-const { statusCodes } = constants;
+import { statusCodes } from "../constants/index.js";
 
 export const uploadErrorHandler = (err, req, res, next) => {
   if (err.name === "MulterError") {

@@ -9,13 +9,19 @@ export const getUsers = asyncHandler(async (req, res) => {
 });
 
 export const getProfile = asyncHandler(async (req, res) => {
-  const data = await service.getUserById(req.user.id);
+  const identifier = req.user.id || req.user._id;
+  const data = await service.getUserById(identifier);
   return successResponse(res, data, "Profile fetched");
 });
 
 export const updateUser = asyncHandler(async (req, res) => {
   const data = await service.updateUser(req.params.id, req.body);
-  return successResponse(res, data, "Updated");
+  return successResponse(res, data, "User updated");
+});
+
+export const deleteUser = asyncHandler(async (req, res) => {
+  const data = await service.deleteUser(req.params.id);
+  return successResponse(res, data, "User deleted");
 });
 
 export const uploadDocuments = asyncHandler(async (req, res) => {
@@ -27,7 +33,8 @@ export const uploadDocuments = asyncHandler(async (req, res) => {
     shopPhoto: files?.shopPhoto?.[0]?.path,
   };
 
-  const data = await service.updateUser(req.user.id, { documents });
+  const identifier = req.user.id || req.user._id;
+  const data = await service.updateUser(identifier, { documents });
 
   return successResponse(res, data, "Documents uploaded");
 });

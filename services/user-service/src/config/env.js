@@ -13,7 +13,7 @@ requiredEnv.forEach((key) => {
 });
 
 export const ENV = {
-  PORT: process.env.USER_PORT || process.env.PORT || 8082,
+  PORT: Number(process.env.USER_PORT) || Number(process.env.PORT) || 8083,
   DATABASE: process.env.DATABASE,
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "1d",

@@ -1,6 +1,4 @@
-// shared/utils/response.js
-import { constants } from "../index.js";
-const { statusCodes, messages: constMessages } = constants;
+import { statusCodes, messages as constMessages } from "../constants/index.js";
 
 export const successResponse = (res, data = null, message = constMessages.SUCCESS, status = statusCodes.HTTP_STATUS.OK) => {
   return res.status(status).json({

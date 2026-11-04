@@ -1,6 +1,5 @@
 import jwt from "../utils/jwt.js";
-import { constants } from "../index.js";
-const { statusCodes, messages } = constants;
+import { statusCodes, messages } from "../constants/index.js";
 
 export const authMiddleware = (req, res, next) => {
   try {

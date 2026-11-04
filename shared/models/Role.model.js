@@ -2,37 +2,47 @@ import mongoose from "mongoose";
 
 const roleSchema = new mongoose.Schema(
   {
-    name: {
+    id: {
       type: String,
       required: true,
       unique: true,
-      lowercase: true,
       trim: true,
     },
 
-    permissions: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
+    rolename: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+    },
+
+    permissions: {
+      type: [String],
+      default: [],
+    },
+
+    pages: {
+      type: [String],
+      default: [],
+    },
 
     isActive: {
       type: Boolean,
       default: true,
-      index: true,
     },
 
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
     },
   },
   {
     timestamps: true,
-    versionKey: false,
+    versionKey: "__v",
   }
 );
 
-export default mongoose.model("Role", roleSchema);
+const Role = mongoose.model("Role", roleSchema);
+
+export default Role;

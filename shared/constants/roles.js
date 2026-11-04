@@ -1,5 +1,10 @@
 export const roles = {
   ADMIN: "admin",
-  VENDOR: "vendor",
   CUSTOMER: "customer",
+  ACCOUNTANT: "accountant",
+  MANAGER: "manager",
+  PRODUCT: "product",
+  ARCHIVED: "archived",
 };
+
+export default roles;

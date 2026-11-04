@@ -13,7 +13,10 @@ export const checkPermission = (requiredPermission) => {
         });
       }
 
-      if (user.role === roles.ADMIN) {
+      const userRole = (user.role || "").toLowerCase();
+
+      // Admin or matching role bypasses permission check
+      if (userRole === roles.ADMIN || userRole === String(requiredPermission || "").toLowerCase()) {
         return next();
       }
 
@@ -24,7 +27,12 @@ export const checkPermission = (requiredPermission) => {
         });
       }
 
-      if (requiredPermission === "*") {
+      // Full access wildcard bypass
+      if (
+        requiredPermission === "*" ||
+        user.permissions.includes("*") ||
+        user.permissions.includes("Full_Access")
+      ) {
         return next();
       }
 
@@ -58,9 +66,10 @@ export const authorizeRoles = (...allowedRoles) => {
         });
       }
 
-      const userRole = user.role?.toLowerCase();
+      const userRole = (user.role || "").toLowerCase();
+      const normalized = allowedRoles.map((r) => String(r).toLowerCase());
 
-      if (!allowedRoles.map(r => r.toLowerCase()).includes(userRole)) {
+      if (!normalized.includes(userRole)) {
         return res.status(statusCodes.HTTP_STATUS.FORBIDDEN).json({
           success: false,
           message: messages.FORBIDDEN,

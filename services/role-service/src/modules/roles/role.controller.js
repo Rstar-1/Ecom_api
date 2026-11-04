@@ -12,7 +12,7 @@ export const createRole = asyncHandler(async (req, res) => {
 
 // ================= GET ALL ROLES =================
 export const getRoles = asyncHandler(async (req, res) => {
-  const data = await service.getRoles();
+  const data = await service.getRoles(req.query);
 
   return successResponse(res, data, "Roles fetched");
 });

@@ -1,101 +1,96 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
-/* ================= ADDRESS ================= */
-const addressSchema = new mongoose.Schema(
-  {
-    street: { type: String, trim: true },
-    city: { type: String, trim: true },
-    state: { type: String, trim: true },
-    country: { type: String, trim: true },
-    pincode: { type: String, trim: true },
-  },
-  { _id: false }
-);
-
-/* ================= SHOP DETAILS ================= */
-const shopDetailsSchema = new mongoose.Schema(
-  {
-    shopName: { type: String, trim: true },
-    businessType: { type: String, trim: true },
-    category: { type: String, trim: true },
-    gstNumber: {
-      type: String,
-      trim: true,
-      uppercase: true,
-      match: [/^[0-9A-Z]{15}$/, "Invalid GST number"],
-    },
-    panNumber: {
-      type: String,
-      trim: true,
-      uppercase: true,
-      match: [/^[A-Z]{5}[0-9]{4}[A-Z]$/, "Invalid PAN number"],
-    },
-    shopLicenseNumber: { type: String, trim: true },
-  },
-  { _id: false }
-);
-
-/* ================= DOCUMENTS ================= */
-const documentsSchema = new mongoose.Schema(
-  {
-    gstCertificate: String,
-    panCard: String,
-    shopPhoto: String,
-  },
-  { _id: false }
-);
-
-/* ================= USER ================= */
 const userSchema = new mongoose.Schema(
   {
-    fullname: { type: String, required: true, trim: true },
+    id: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+    },
+
+    fullname: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
     email: {
       type: String,
+      required: true,
       unique: true,
-      sparse: true,
       lowercase: true,
       trim: true,
     },
 
     mobile: {
       type: String,
-      unique: true,
-      sparse: true,
+      required: true,
       trim: true,
     },
 
     password: {
       type: String,
-      select: false,
-      minlength: 6,
+      required: true,
     },
 
-    isOtpVerified: { type: Boolean, default: false },
+    isOtpVerified: {
+      type: Boolean,
+      default: false,
+    },
 
-    image: { type: String, default: "" },
-    address: { type: [addressSchema], default: [] },
+    image: {
+      type: String,
+      default: "",
+    },
 
-    shopDetails: { type: shopDetailsSchema, default: null },
-    documents: { type: documentsSchema, default: null },
+    address: {
+      type: [String],
+      default: ["", ""],
+    },
 
-    role: { type: String, default: "user" },
+    documents: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
 
-    status: { type: Boolean, default: true },
-    isDeleted: { type: Boolean, default: false },
+    roleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Role",
+      required: true,
+    },
 
-    lastLogin: Date,
-    loginAttempts: { type: Number, default: 0 },
+    loginAttempts: {
+      type: Number,
+      default: 0,
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+
+    lastLogin: {
+      type: Date,
+      default: null,
+    },
   },
-  { timestamps: true, versionKey: false }
+  {
+    timestamps: true,
+    versionKey: "__v",
+  }
 );
 
 /* ================= PASSWORD HASH ================= */
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
-
-  if (this.password) {
+  if (this.password && !this.password.startsWith("$2b$")) {
     this.password = await bcrypt.hash(this.password, 10);
   }
 });
@@ -103,13 +98,10 @@ userSchema.pre("save", async function () {
 /* ================= SAFE RESPONSE ================= */
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
-
   delete obj.password;
-
-  if (!obj.shopDetails) obj.shopDetails = {};
-  if (!obj.documents) obj.documents = {};
-
   return obj;
 };
 
-export default mongoose.model("User", userSchema);
+const User = mongoose.model("User", userSchema);
+
+export default User;

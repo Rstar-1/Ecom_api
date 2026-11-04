@@ -1,5 +1,8 @@
-import * as messages from './messages.js';
-import * as roles from './roles.js';
-import * as statusCodes from './statusCodes.js';
+import messages from "./messages.js";
+import roles from "./roles.js";
+import { HTTP_STATUS } from "./statusCodes.js";
 
-export { messages, roles, statusCodes };
+const statusCodes = { HTTP_STATUS };
+
+export { messages, roles, statusCodes, HTTP_STATUS };
+export default { messages, roles, statusCodes, HTTP_STATUS };

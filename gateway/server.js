@@ -1,7 +1,7 @@
 import app from "./src/app.js";
 import { env } from "./src/config/env.js";
 
-const server = app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, "0.0.0.0", () => {
   console.log(`[GATEWAY] Running on port ${env.PORT}`);
 });
 

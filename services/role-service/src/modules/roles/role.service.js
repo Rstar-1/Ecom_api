@@ -1,104 +1,103 @@
 import { utils, models } from "../../../../../shared/index.js";
 
-const { info } = utils;
+const { info, generateRoleId, buildRoleQuery } = utils;
 const { Role } = models;
-
-/* ================= NORMALIZE ROLE NAME ================= */
-const normalizeName = (name) => {
-  return name.trim().toLowerCase();
-};
 
 /* ================= CREATE ROLE ================= */
 export const createRole = async (data) => {
-  if (!data.name) {
+  if (!data.rolename) {
     throw new Error("Role name is required");
   }
 
-  const name = normalizeName(data.name);
+  const rolename = data.rolename.trim().toLowerCase();
 
-  const exists = await Role.findOne({ name });
-
+  const exists = await Role.findOne({ rolename, isDeleted: false });
   if (exists) {
     throw new Error("Role already exists");
   }
 
+  const id = data.id?.trim() || (await generateRoleId());
+
+  const existingId = await Role.findOne({ id });
+  if (existingId) {
+    throw new Error(`Role with ID ${id} already exists`);
+  }
+
   const role = await Role.create({
-    ...data,
-    name,
+    id,
+    rolename,
+    permissions: Array.isArray(data.permissions) ? data.permissions : [],
+    pages: Array.isArray(data.pages) ? data.pages : [],
+    isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+    isDeleted: data.isDeleted !== undefined ? Boolean(data.isDeleted) : false,
   });
 
-  info(`ROLE_CREATED: ${role.name}`);
-
+  info(`ROLE_CREATED: ${role.rolename} (${role.id})`);
   return role;
 };
 
 /* ================= GET ALL ROLES ================= */
-export const getRoles = async () => {
-  return await Role.find({ isDeleted: false })
-    .sort({ createdAt: -1 })
-    .lean();
+export const getRoles = async (query = {}) => {
+  const filter = { isDeleted: false };
+  if (query.isActive !== undefined) {
+    filter.isActive = query.isActive === "true" || query.isActive === true;
+  }
+
+  return Role.find(filter).sort({ createdAt: -1 }).lean();
 };
 
-/* ================= GET ROLE BY ID ================= */
-export const getRoleById = async (id) => {
-  const role = await Role.findOne({
-    _id: id,
-    isDeleted: false,
-  });
-
+/* ================= GET ROLE BY ID / IDENTIFIER ================= */
+export const getRoleById = async (identifier) => {
+  const role = await Role.findOne(buildRoleQuery(identifier));
   if (!role) {
     throw new Error("Role not found");
   }
-
   return role;
 };
 
 /* ================= UPDATE ROLE ================= */
-export const updateRole = async (id, data) => {
-  const role = await Role.findOne({
-    _id: id,
-    isDeleted: false,
-  });
-
+export const updateRole = async (identifier, data) => {
+  const role = await Role.findOne(buildRoleQuery(identifier));
   if (!role) {
     throw new Error("Role not found");
   }
 
-  /* 🔥 Prevent name duplication */
-  if (data.name) {
-    const name = normalizeName(data.name);
-
+  if (data.rolename) {
+    const rolename = data.rolename.trim().toLowerCase();
     const exists = await Role.findOne({
-      name,
-      _id: { $ne: id },
+      rolename,
+      _id: { $ne: role._id },
+      isDeleted: false,
     });
 
     if (exists) {
-      throw new Error("Role already exists");
+      throw new Error("Role with this rolename already exists");
     }
-
-    role.name = name;
+    role.rolename = rolename;
   }
 
-  /* Optional: update permissions if you have */
-  if (data.permissions) {
-    role.permissions = data.permissions;
+  if (data.id && data.id.trim() !== role.id) {
+    const newId = data.id.trim();
+    const exists = await Role.findOne({ id: newId, _id: { $ne: role._id } });
+    if (exists) {
+      throw new Error(`Role with ID ${newId} already exists`);
+    }
+    role.id = newId;
   }
+
+  if (Array.isArray(data.permissions)) role.permissions = data.permissions;
+  if (Array.isArray(data.pages)) role.pages = data.pages;
+  if (data.isActive !== undefined) role.isActive = Boolean(data.isActive);
+  if (data.isDeleted !== undefined) role.isDeleted = Boolean(data.isDeleted);
 
   await role.save();
-
-  info(`ROLE_UPDATED: ${role.name}`);
-
+  info(`ROLE_UPDATED: ${role.rolename} (${role.id})`);
   return role;
 };
 
 /* ================= DELETE ROLE (SOFT DELETE) ================= */
-export const deleteRole = async (id) => {
-  const role = await Role.findOne({
-    _id: id,
-    isDeleted: false,
-  });
-
+export const deleteRole = async (identifier) => {
+  const role = await Role.findOne(buildRoleQuery(identifier));
   if (!role) {
     throw new Error("Role not found");
   }
@@ -106,7 +105,6 @@ export const deleteRole = async (id) => {
   role.isDeleted = true;
   await role.save();
 
-  info(`ROLE_DELETED: ${role.name}`);
-
-  return { deleted: true };
+  info(`ROLE_DELETED: ${role.rolename} (${role.id})`);
+  return { deleted: true, message: `Role ${role.rolename} deleted successfully` };
 };

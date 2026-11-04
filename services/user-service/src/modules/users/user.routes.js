@@ -3,6 +3,7 @@ import {
   getUsers,
   getProfile,
   updateUser,
+  deleteUser,
   uploadDocuments,
 } from "./user.controller.js";
 
@@ -13,25 +14,13 @@ const router = express.Router();
 
 /* ================= USERS ================= */
 
-router.get(
-  "/profile",
-  authMiddleware,
-  getProfile
-);
+router.get("/profile", authMiddleware, getProfile);
 
-router.get(
-  "/",
-  authMiddleware,
-  checkPermission("USER_VIEW"),
-  getUsers
-);
+router.get("/", authMiddleware, checkPermission("USER_VIEW"), getUsers);
 
-router.put(
-  "/:id",
-  authMiddleware,
-  checkPermission("USER_UPDATE"),
-  updateUser
-);
+router.put("/:id", authMiddleware, checkPermission("USER_UPDATE"), updateUser);
+
+router.delete("/:id", authMiddleware, checkPermission("USER_DELETE"), deleteUser);
 
 /* ================= UPLOAD ================= */
 
