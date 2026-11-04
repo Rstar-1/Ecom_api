@@ -94,81 +94,6 @@ services:
     networks:
       - ecommerce-network
 
-  # Product Service
-  product-service:
-    build:
-      context: ..
-      dockerfile: docker/services/product-service.Dockerfile
-    container_name: ecommerce-product-service
-    restart: always
-    ports:
-      - "3002:3002"
-    environment:
-      NODE_ENV: production
-      DB_URI: mongodb://admin:admin@123@mongodb:27017/product-db?authSource=admin
-      REDIS_URL: redis://:redis@123@redis:6379
-      PORT: 3002
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_started
-    networks:
-      - ecommerce-network
-
-  # Cart Service
-  cart-service:
-    build:
-      context: ..
-      dockerfile: docker/services/cart-service.Dockerfile
-    container_name: ecommerce-cart-service
-    restart: always
-    ports:
-      - "3003:3003"
-    environment:
-      NODE_ENV: production
-      DB_URI: mongodb://admin:admin@123@mongodb:27017/cart-db?authSource=admin
-      REDIS_URL: redis://:redis@123@redis:6379
-      PORT: 3003
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_started
-    networks:
-      - ecommerce-network
-
-  # Order Service
-  order-service:
-    build:
-      context: ..
-      dockerfile: docker/services/order-service.Dockerfile
-    container_name: ecommerce-order-service
-    restart: always
-    ports:
-      - "3004:3004"
-    environment:
-      NODE_ENV: production
-      DB_URI: mongodb://admin:admin@123@mongodb:27017/order-db?authSource=admin
-      REDIS_URL: redis://:redis@123@redis:6379
-      PORT: 3004
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_started
-    networks:
-      - ecommerce-network
-
   # API Gateway
   gateway:
     build:
@@ -182,14 +107,8 @@ services:
       NODE_ENV: production
       PORT: 5000
       AUTH_SERVICE_URL: http://auth-service:3001
-      PRODUCT_SERVICE_URL: http://product-service:3002
-      CART_SERVICE_URL: http://cart-service:3003
-      ORDER_SERVICE_URL: http://order-service:3004
     depends_on:
       - auth-service
-      - product-service
-      - cart-service
-      - order-service
     networks:
       - ecommerce-network
 

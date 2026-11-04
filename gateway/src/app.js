@@ -1,18 +1,18 @@
 import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
 
 import routes from "./routes/index.js";
 import { requestId } from "./middlewares/requestId.middleware.js";
 import { loggerMiddleware } from "./middlewares/logger.middleware.js";
-import { middleware, utils } from "../../shared/index.js";
+import { middleware } from "../../shared/index.js";
 
 const app = express();
 
-utils.configureApp(app);
-
-app.use((req, res, next) => {
-  //   console.log(`[GATEWAY] incoming ${req.method} ${req.originalUrl} payload: ${JSON.stringify(req.body)}`);
-  next();
-});
+app.use(helmet());
+app.use(cors({ origin: "*", credentials: true }));
+app.use(morgan("dev"));
 
 app.set("trust proxy", 1);
 
