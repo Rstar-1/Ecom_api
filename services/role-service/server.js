@@ -28,6 +28,11 @@ const startServer = async () => {
 const shutdown = async (signal) => {
   console.log(`🛑 ${signal} received`);
 
+  const forceTimeout = setTimeout(() => {
+    process.exit(0);
+  }, 1000);
+  forceTimeout.unref();
+
   try {
     if (server) {
       await new Promise((resolve) => server.close(resolve));
@@ -46,5 +51,6 @@ const shutdown = async (signal) => {
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGUSR2", () => shutdown("SIGUSR2"));
 
 startServer();

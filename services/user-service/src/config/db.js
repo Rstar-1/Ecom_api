@@ -7,7 +7,7 @@ const connectDB = async () => {
       autoIndex: true,
       tls: true,
       tlsAllowInvalidCertificates: true,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 30000,
     });
     console.log(`MongoDB Connected [${ENV.SERVICE_NAME}]`);
   } catch (err) {
