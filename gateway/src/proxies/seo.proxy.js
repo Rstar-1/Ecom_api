@@ -1,0 +1,11 @@
+import express from "express";
+import { createProxy } from "../utils/proxy.js";
+import { env } from "../config/env.js";
+
+const router = express.Router();
+
+// Routes to seo-service
+router.use("/api/seo", createProxy(env.SEO_SERVICE_URL));
+
+export default router;
+

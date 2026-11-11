@@ -5,23 +5,30 @@ import {
   getRoleById,
   updateRole,
   deleteRole,
+  bulkDeleteRole,
 } from "./role.controller.js";
+import { middleware } from "../../../../../shared/index.js";
 
+const { upload, uploadErrorHandler } = middleware;
 const router = express.Router();
 
-// CREATE
-router.post("/", createRole);
+// CREATE (handles both JSON and FormData)
+router.post("/", upload.none(), uploadErrorHandler, createRole);
 
-// READ ALL
+// READ ALL (supports pagination with ?page=1&limit=10)
 router.get("/", getRoles);
+
+// BULK DELETE (must be before /:id)
+router.post("/bulk-delete", bulkDeleteRole);
+router.delete("/bulk-delete", bulkDeleteRole);
 
 // READ ONE
 router.get("/:id", getRoleById);
 
-// UPDATE
-router.put("/:id", updateRole);
+// UPDATE (handles both JSON and FormData)
+router.put("/:id", upload.none(), uploadErrorHandler, updateRole);
 
-// DELETE
+// DELETE ONE
 router.delete("/:id", deleteRole);
 
 export default router;

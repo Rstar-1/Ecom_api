@@ -1,14 +1,9 @@
 import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-
 import mainRoutes from "./routes/index.js";
 import { middleware, utils, constants } from "../../../shared/index.js";
+
 const { statusCodes } = constants;
 const { ensureDir } = utils;
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -18,8 +13,8 @@ utils.configureApp(app);
 /* RATE LIMIT */
 app.use(middleware.rateLimiter);
 
-/* FILE STORAGE */
-const uploadDir = path.join(__dirname, "../uploads");
+/* FILE STORAGE (COMMON ROOT UPLOADS OUTSIDE SERVICES) */
+const uploadDir = middleware.uploadPath;
 ensureDir(uploadDir);
 
 app.use("/uploads", express.static(uploadDir));

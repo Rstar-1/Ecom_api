@@ -4,7 +4,7 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "dev": "nodemon --delay 500ms server.js"
+    "dev": "nodemon --delay 500ms --watch . --watch ../../shared server.js"
   },
   "keywords": [],
   "author": "",

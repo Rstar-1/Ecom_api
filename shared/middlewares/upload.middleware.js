@@ -1,9 +1,15 @@
 import multer from "multer";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 
-/* ================= UPLOAD PATH ================= */
-const uploadPath = path.join(process.cwd(), "uploads");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/* ================= COMMON UPLOADS PATH (OUTSIDE OF SERVICES) ================= */
+// Resolves to d:\Ecom_api\uploads regardless of current working directory
+export const uploadPath =
+  process.env.UPLOADS_DIR || path.resolve(__dirname, "../../uploads");
 
 /* ================= CREATE FOLDER ================= */
 if (!fs.existsSync(uploadPath)) {
@@ -51,3 +57,5 @@ export const upload = multer({
     fileSize: 5 * 1024 * 1024, // 5MB
   },
 });
+
+export default { upload, uploadPath };

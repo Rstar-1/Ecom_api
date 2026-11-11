@@ -8,8 +8,13 @@
     "auth:dev": "npm --prefix services/auth-service run dev",
     "user:dev": "npm --prefix services/user-service run dev",
     "role:dev": "npm --prefix services/role-service run dev",
+    "product:dev": "npm --prefix services/product-service run dev",
+    "blog:dev": "npm --prefix services/blog-service run dev",
+    "lead:dev": "npm --prefix services/lead-service run dev",
+    "cms:dev": "npm --prefix services/cms-service run dev",
+    "seo:dev": "npm --prefix services/seo-service run dev",
     "gateway:dev": "npm --prefix gateway run dev",
-    "dev": "concurrently -k -n AUTH,USER,ROLE,GATEWAY -c blue,green,purple,cyan \"npm run auth:dev\" \"npm run user:dev\" \"npm run role:dev\" \"npm run gateway:dev\""
+    "dev": "concurrently -k -n AUTH,USER,ROLE,PRODUCT,BLOG,LEAD,CMS,SEO,GATEWAY -c blue,green,purple,yellow,magenta,gray,red,white,cyan \"npm run auth:dev\" \"npm run user:dev\" \"npm run role:dev\" \"npm run product:dev\" \"npm run blog:dev\" \"npm run lead:dev\" \"npm run cms:dev\" \"npm run seo:dev\" \"npm run gateway:dev\""
   },
   "keywords": [],
   "author": "",

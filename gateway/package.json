@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "nodemon --delay 500ms --no-warnings server.js",
+    "dev": "nodemon --delay 500ms --watch . --watch ../shared --no-warnings server.js",
     "start": "node server.js"
   },
   "dependencies": {

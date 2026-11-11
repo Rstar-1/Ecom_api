@@ -5,7 +5,10 @@ const { asyncHandler, successResponse } = utils;
 
 // ================= CREATE ROLE =================
 export const createRole = asyncHandler(async (req, res) => {
-  const data = await service.createRole(req.body);
+  const body = { ...req.body };
+  if (body.roleName && !body.rolename) body.rolename = body.roleName;
+  if (body.name && !body.rolename) body.rolename = body.name;
+  const data = await service.createRole(body);
 
   return successResponse(res, data, "Role created");
 });
@@ -16,6 +19,15 @@ export const getRoles = asyncHandler(async (req, res) => {
 
   return successResponse(res, data, "Roles fetched");
 });
+
+// ================= BULK DELETE ROLES =================
+export const bulkDeleteRole = asyncHandler(async (req, res) => {
+  const data = await service.bulkDeleteRole(req.body);
+
+  return successResponse(res, data, "Roles deleted successfully");
+});
+
+export const bulkDeleteRoles = bulkDeleteRole;
 
 // ================= GET ROLE =================
 export const getRoleById = asyncHandler(async (req, res) => {

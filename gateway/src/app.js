@@ -21,6 +21,9 @@ app.use(requestId);
 app.use(loggerMiddleware);
 app.use(middleware.rateLimiter);
 
+/* Static uploads (common root uploads outside services) */
+app.use("/uploads", express.static(middleware.uploadPath));
+
 /* routes */
 app.use("/", routes);
 

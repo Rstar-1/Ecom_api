@@ -39,6 +39,8 @@ export const registerUser = async (data) => {
   const roleDoc = await resolveRole(data);
   const id = data.id?.trim() || (await generateUserId());
 
+  const isOtpVerified = data.isOtpVerified !== undefined ? Boolean(data.isOtpVerified) : false;
+
   const user = await User.create({
     id,
     fullname: data.fullname.trim(),
@@ -47,24 +49,47 @@ export const registerUser = async (data) => {
     password: data.password,
     roleId: roleDoc._id,
     isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
-    isOtpVerified: false,
+    isOtpVerified,
     image: data.image || "",
     address: parseAddress(data.address),
     documents: data.documents || null,
   });
 
-  await generateAndSendOtp({
-    mobile: user.mobile,
-    email: user.email,
-    purpose: "REGISTER",
-  });
+  await Role.findByIdAndUpdate(roleDoc._id, { $inc: { count: 1 } });
+
+  if (!isOtpVerified) {
+    await generateAndSendOtp({
+      mobile: user.mobile,
+      email: user.email,
+      purpose: "REGISTER",
+    });
+
+    return {
+      message: "OTP sent successfully",
+      id: user.id,
+      mobile: user.mobile,
+      email: user.email,
+      contact: user.mobile || user.email,
+    };
+  }
+
+  await user.populate("roleId", "id rolename permissions pages");
+
+  const roleName = roleDoc ? roleDoc.rolename : (user.roleId?.rolename || "customer");
+  const userResponse = {
+    ...user.toJSON(),
+    role: roleName.toLowerCase(),
+    rolename: roleName,
+    permissions: roleDoc?.permissions || user.roleId?.permissions || [],
+    pages: roleDoc?.pages || user.roleId?.pages || [],
+  };
 
   return {
-    message: "OTP sent successfully",
+    message: "User registered successfully",
     id: user.id,
     mobile: user.mobile,
     email: user.email,
-    contact: user.mobile || user.email,
+    user: userResponse,
   };
 };
 
@@ -91,9 +116,19 @@ export const verifyRegisterOtp = async ({ mobile, email, otp }) => {
 
   if (!user) throw new Error(messages.USER_NOT_FOUND);
 
+  const roleDoc = typeof user.roleId === "object" ? user.roleId : await Role.findById(user.roleId);
+  const roleName = roleDoc ? roleDoc.rolename : "customer";
+  const userResponse = {
+    ...user.toJSON(),
+    role: roleName.toLowerCase(),
+    rolename: roleName,
+    permissions: roleDoc?.permissions || [],
+    pages: roleDoc?.pages || [],
+  };
+
   return {
     message: "User verified successfully",
-    user,
+    user: userResponse,
   };
 };
 
@@ -143,7 +178,18 @@ export const loginUser = async ({ email, mobile, password }) => {
     ENV.JWT_EXPIRES_IN
   );
 
-  return { user, token };
+  await user.populate("roleId", "id rolename permissions pages");
+
+  const roleName = roleDoc ? roleDoc.rolename : (user.roleId?.rolename || "customer");
+  const userResponse = {
+    ...user.toJSON(),
+    role: roleName.toLowerCase(),
+    rolename: roleName,
+    permissions: roleDoc?.permissions || user.roleId?.permissions || [],
+    pages: roleDoc?.pages || user.roleId?.pages || [],
+  };
+
+  return { user: userResponse, token };
 };
 
 /* ================= LOGOUT ================= */

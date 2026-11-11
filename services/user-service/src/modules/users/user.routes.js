@@ -1,33 +1,43 @@
 import express from "express";
 import {
   getUsers,
+  getUserById,
   getProfile,
   updateUser,
   deleteUser,
+  bulkDeleteUser,
   uploadDocuments,
 } from "./user.controller.js";
 
 import { middleware } from "../../../../../shared/index.js";
-const { authMiddleware, upload, uploadErrorHandler, checkPermission } = middleware;
+const { authMiddleware, upload, uploadErrorHandler } = middleware;
 
 const router = express.Router();
 
-/* ================= USERS ================= */
-
+/* ================= PROFILE ================= */
 router.get("/profile", authMiddleware, getProfile);
 
-router.get("/", authMiddleware, checkPermission("USER_VIEW"), getUsers);
+/* ================= USERS CRUD ================= */
+// List users (supports ?page=1&limit=5&isDeleted=false)
+router.get("/", getUsers);
 
-router.put("/:id", authMiddleware, checkPermission("USER_UPDATE"), updateUser);
+// Bulk delete (must be placed before /:id)
+router.post("/bulk-delete", bulkDeleteUser);
+router.delete("/bulk-delete", bulkDeleteUser);
 
-router.delete("/:id", authMiddleware, checkPermission("USER_DELETE"), deleteUser);
+// Read single user
+router.get("/:id", getUserById);
+
+// Update user
+router.put("/:id", updateUser);
+
+// Delete user
+router.delete("/:id", deleteUser);
 
 /* ================= UPLOAD ================= */
-
 router.post(
   "/upload-documents",
   authMiddleware,
-  checkPermission("USER_UPDATE"),
   upload.fields([
     { name: "gstCertificate", maxCount: 1 },
     { name: "panCard", maxCount: 1 },
