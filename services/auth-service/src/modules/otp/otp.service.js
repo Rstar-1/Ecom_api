@@ -57,14 +57,14 @@ export const generateAndSendOtp = async ({
 };
 
 /* ================= VERIFY OTP ================= */
-export const verifyOtp = async ({ mobile, email, otp }) => {
+export const verifyOtp = async ({ mobile, email, otp, purpose = "REGISTER" }) => {
   if (!mobile && !email) {
     throw new Error("Mobile or Email required");
   }
 
   const filter = {
     code: otp,
-    purpose: "REGISTER",
+    purpose: purpose || "REGISTER",
     expiresAt: { $gt: new Date() },
     ...(mobile ? { mobile } : {}),
     ...(email ? { email } : {}),

@@ -4,7 +4,7 @@ import { utils, constants, models } from "../../../../../shared/index.js";
 
 const { jwt, parseAddress, resolveRole, generateUserId } = utils;
 const { messages } = constants;
-const { User, Role } = models;
+const { User, Role, Otp } = models;
 
 import { generateAndSendOtp, verifyOtp } from "../otp/otp.service.js";
 
@@ -195,4 +195,92 @@ export const loginUser = async ({ email, mobile, password }) => {
 /* ================= LOGOUT ================= */
 export const logoutUser = async (user) => {
   return { message: "Logout successful" };
+};
+
+/* ================= FORGOT PASSWORD ================= */
+export const forgotPassword = async ({ email, mobile }) => {
+  if (!email && !mobile) {
+    throw new Error("Email or mobile is required");
+  }
+
+  const query = { isDeleted: false };
+  if (email || mobile) {
+    query.$or = [
+      email ? { email: email.toLowerCase().trim() } : null,
+      mobile ? { mobile: mobile.trim() } : null,
+    ].filter(Boolean);
+  }
+
+  const user = await User.findOne(query);
+  if (!user) throw new Error(messages.USER_NOT_FOUND);
+
+  await generateAndSendOtp({
+    mobile: user.mobile,
+    email: user.email,
+    purpose: "FORGOT_PASSWORD",
+  });
+
+  return {
+    message: "OTP sent successfully",
+    mobile: user.mobile,
+    email: user.email,
+    contact: user.mobile || user.email,
+  };
+};
+
+/* ================= VERIFY FORGOT PASSWORD OTP ================= */
+export const verifyForgotPasswordOtp = async ({ email, mobile, otp }) => {
+  if (!otp) throw new Error("OTP is required");
+
+  const normEmail = email ? email.toLowerCase().trim() : undefined;
+  const normMobile = mobile ? mobile.trim() : undefined;
+
+  await verifyOtp({
+    mobile: normMobile,
+    email: normEmail,
+    otp,
+    purpose: "FORGOT_PASSWORD",
+  });
+
+  return {
+    message: "OTP verified successfully",
+  };
+};
+
+/* ================= RESET PASSWORD ================= */
+export const resetPassword = async ({ email, mobile, password }) => {
+  if (!password) throw new Error("New password is required");
+
+  const normEmail = email ? email.toLowerCase().trim() : undefined;
+  const normMobile = mobile ? mobile.trim() : undefined;
+
+  const otpFilter = {
+    purpose: "FORGOT_PASSWORD",
+    isVerified: true,
+    ...(normMobile ? { mobile: normMobile } : {}),
+    ...(normEmail ? { email: normEmail } : {}),
+  };
+
+  const otpRecord = await Otp.findOne(otpFilter);
+  if (!otpRecord) {
+    throw new Error("OTP verification required or OTP expired");
+  }
+
+  const query = {
+    isDeleted: false,
+    ...(normMobile ? { mobile: normMobile } : {}),
+    ...(normEmail ? { email: normEmail } : {}),
+  };
+
+  const user = await User.findOne(query);
+  if (!user) throw new Error(messages.USER_NOT_FOUND);
+
+  user.password = password;
+  await user.save();
+
+  await Otp.deleteOne({ _id: otpRecord._id });
+
+  return {
+    message: "Password reset successfully",
+  };
 };
