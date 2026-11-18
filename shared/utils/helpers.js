@@ -2,13 +2,13 @@ import mongoose from "mongoose";
 import {
   Role,
   User,
-  Category,
-  ProductCategory,
-  Product,
-  BlogCategory,
-  Blog,
   Lead,
-  CMS,
+  Campaign,
+  Product,
+  ProductCategory,
+  Category,
+  Blog,
+  BlogCategory,
   SEO,
 } from "../models/index.js";
 
@@ -140,158 +140,28 @@ export const buildUserQuery = (identifier, includeDeleted = true) => {
   return query;
 };
 
-/* ================= PRODUCT CATEGORY HELPERS ================= */
-export const generateProductCategoryId = async () => {
-  const categories = await ProductCategory.find({ id: /^PCAT-\d+$/ }).select("id").lean();
-
-  let maxNum = 0;
-  for (const c of categories) {
-    const match = c.id?.match(/^PCAT-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
-    }
-  }
-
-  const nextNum = maxNum + 1;
-  const padLength = Math.max(3, String(nextNum).length);
-  return `PCAT-${String(nextNum).padStart(padLength, "0")}`;
-};
-
-export const buildProductCategoryQuery = (identifier, includeDeleted = true) => {
-  if (!identifier) return { _id: null };
-  const str = String(identifier).trim();
-  const isObjectId = mongoose.Types.ObjectId.isValid(str);
-  const query = {
-    $or: isObjectId
-      ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
-      : [{ id: str }, { categoryName: str }],
-  };
-  if (!includeDeleted) {
-    query.isDeleted = false;
-  }
-  return query;
-};
-
-// Aliases for Category backward compatibility
-export const generateCategoryId = generateProductCategoryId;
-export const buildCategoryQuery = buildProductCategoryQuery;
-
-/* ================= PRODUCT HELPERS ================= */
-export const generateProductId = async () => {
-  const products = await Product.find({ id: /^PROD-\d+$/ }).select("id").lean();
-
-  let maxNum = 0;
-  for (const p of products) {
-    const match = p.id?.match(/^PROD-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
-    }
-  }
-
-  const nextNum = maxNum + 1;
-  const padLength = Math.max(3, String(nextNum).length);
-  return `PROD-${String(nextNum).padStart(padLength, "0")}`;
-};
-
-export const buildProductQuery = (identifier, includeDeleted = true) => {
-  if (!identifier) return { _id: null };
-  const str = String(identifier).trim();
-  const isObjectId = mongoose.Types.ObjectId.isValid(str);
-  const query = {
-    $or: isObjectId
-      ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
-      : [{ id: str }, { productName: str }],
-  };
-  if (!includeDeleted) {
-    query.isDeleted = false;
-  }
-  return query;
-};
-
-/* ================= BLOG CATEGORY HELPERS ================= */
-export const generateBlogCategoryId = async () => {
-  const categories = await BlogCategory.find({ id: /^BCAT-\d+$/ }).select("id").lean();
-
-  let maxNum = 0;
-  for (const c of categories) {
-    const match = c.id?.match(/^BCAT-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
-    }
-  }
-
-  const nextNum = maxNum + 1;
-  const padLength = Math.max(3, String(nextNum).length);
-  return `BCAT-${String(nextNum).padStart(padLength, "0")}`;
-};
-
-export const buildBlogCategoryQuery = (identifier, includeDeleted = true) => {
-  if (!identifier) return { _id: null };
-  const str = String(identifier).trim();
-  const isObjectId = mongoose.Types.ObjectId.isValid(str);
-  const query = {
-    $or: isObjectId
-      ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
-      : [{ id: str }, { categoryName: str }],
-  };
-  if (!includeDeleted) {
-    query.isDeleted = false;
-  }
-  return query;
-};
-
-/* ================= BLOG HELPERS ================= */
-export const generateBlogId = async () => {
-  const blogs = await Blog.find({ id: /^BLOG-\d+$/ }).select("id").lean();
-
-  let maxNum = 0;
-  for (const b of blogs) {
-    const match = b.id?.match(/^BLOG-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
-    }
-  }
-
-  const nextNum = maxNum + 1;
-  const padLength = Math.max(3, String(nextNum).length);
-  return `BLOG-${String(nextNum).padStart(padLength, "0")}`;
-};
-
-export const buildBlogQuery = (identifier, includeDeleted = true) => {
-  if (!identifier) return { _id: null };
-  const str = String(identifier).trim();
-  const isObjectId = mongoose.Types.ObjectId.isValid(str);
-  const query = {
-    $or: isObjectId
-      ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
-      : [{ id: str }, { blogName: str }],
-  };
-  if (!includeDeleted) {
-    query.isDeleted = false;
-  }
-  return query;
-};
-
 /* ================= LEAD HELPERS ================= */
 export const generateLeadId = async () => {
-  const leads = await Lead.find({ id: /^LED-\d+$/ }).select("id").lean();
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const LeadModel = Lead || mongoose.models.Lead || mongoose.model("Lead");
+      const leads = await LeadModel.find({ id: /^LED-\d+$/ }).select("id").lean().maxTimeMS(5000);
 
-  let maxNum = 0;
-  for (const l of leads) {
-    const match = l.id?.match(/^LED-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
+      let maxNum = 0;
+      for (const l of leads) {
+        const match = l.id?.match(/^LED-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+
+      const nextNum = maxNum + 1;
+      const padLength = Math.max(3, String(nextNum).length);
+      return `LED-${String(nextNum).padStart(padLength, "0")}`;
     }
-  }
-
-  const nextNum = maxNum + 1;
-  const padLength = Math.max(3, String(nextNum).length);
-  return `LED-${String(nextNum).padStart(padLength, "0")}`;
+  } catch {}
+  return `LED-${Date.now().toString().slice(-4)}`;
 };
 
 export const buildLeadQuery = (identifier, includeDeleted = true) => {
@@ -301,7 +171,11 @@ export const buildLeadQuery = (identifier, includeDeleted = true) => {
   const query = {
     $or: isObjectId
       ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
-      : [{ id: str }, { mobile: str }, { email: str.toLowerCase() }],
+      : [
+          { id: str },
+          { mobile: str },
+          { email: str.toLowerCase() },
+        ],
   };
   if (!includeDeleted) {
     query.isDeleted = false;
@@ -309,32 +183,217 @@ export const buildLeadQuery = (identifier, includeDeleted = true) => {
   return query;
 };
 
-/* ================= CMS HELPERS ================= */
-export const generateCmsId = async () => {
-  const cmsList = await CMS.find({ id: /^CMS-\d+$/ }).select("id").lean();
+/* ================= CAMPAIGN HELPERS ================= */
+export const generateCampaignId = async () => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const CampaignModel =
+        Campaign || mongoose.models.Campaign || mongoose.model("Campaign");
+      const campaigns = await CampaignModel.find({ id: /^CMP-\d+$/ })
+        .select("id")
+        .lean()
+        .maxTimeMS(5000);
 
-  let maxNum = 0;
-  for (const c of cmsList) {
-    const match = c.id?.match(/^CMS-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
+      let maxNum = 0;
+      for (const c of campaigns) {
+        const match = c.id?.match(/^CMP-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+
+      const nextNum = maxNum + 1;
+      const padLength = Math.max(3, String(nextNum).length);
+      return `CMP-${String(nextNum).padStart(padLength, "0")}`;
     }
-  }
-
-  const nextNum = maxNum + 1;
-  const padLength = Math.max(3, String(nextNum).length);
-  return `CMS-${String(nextNum).padStart(padLength, "0")}`;
+  } catch {}
+  return `CMP-${Date.now().toString().slice(-4)}`;
 };
 
-export const buildCmsQuery = (identifier, includeDeleted = true) => {
+export const buildCampaignQuery = (identifier, includeDeleted = true) => {
   if (!identifier) return { _id: null };
   const str = String(identifier).trim();
   const isObjectId = mongoose.Types.ObjectId.isValid(str);
   const query = {
     $or: isObjectId
       ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
-      : [{ id: str }, { sectionName: new RegExp(`^${str}$`, "i") }],
+      : [
+          { id: str },
+          { name: { $regex: `^${str}$`, $options: "i" } },
+        ],
+  };
+  if (!includeDeleted) {
+    query.isDeleted = false;
+  }
+  return query;
+};
+
+/* ================= PRODUCT HELPERS ================= */
+export const generateProductId = async () => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const ProductModel = Product || mongoose.models.Product || mongoose.model("Product");
+      const products = await ProductModel.find({ id: /^PROD-\d+$/ }).select("id").lean().maxTimeMS(5000);
+
+      let maxNum = 0;
+      for (const p of products) {
+        const match = p.id?.match(/^PROD-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+
+      const nextNum = maxNum + 1;
+      const padLength = Math.max(3, String(nextNum).length);
+      return `PROD-${String(nextNum).padStart(padLength, "0")}`;
+    }
+  } catch {}
+  return `PROD-${Date.now().toString().slice(-4)}`;
+};
+
+export const buildProductQuery = (identifier, includeDeleted = true) => {
+  if (!identifier) return { _id: null };
+  const str = String(identifier).trim();
+  const isObjectId = mongoose.Types.ObjectId.isValid(str);
+  const query = {
+    $or: isObjectId
+      ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
+      : [
+          { id: str },
+          { productName: { $regex: `^${str}$`, $options: "i" } },
+        ],
+  };
+  if (!includeDeleted) {
+    query.isDeleted = false;
+  }
+  return query;
+};
+
+/* ================= PRODUCT CATEGORY HELPERS ================= */
+export const generateProductCategoryId = async () => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const CategoryModel = ProductCategory || Category || mongoose.models.ProductCategory || mongoose.model("ProductCategory");
+      const categories = await CategoryModel.find({ id: /^PCAT-\d+$/ }).select("id").lean().maxTimeMS(5000);
+
+      let maxNum = 0;
+      for (const c of categories) {
+        const match = c.id?.match(/^PCAT-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+
+      const nextNum = maxNum + 1;
+      const padLength = Math.max(3, String(nextNum).length);
+      return `PCAT-${String(nextNum).padStart(padLength, "0")}`;
+    }
+  } catch {}
+  return `PCAT-${Date.now().toString().slice(-4)}`;
+};
+
+export const generateCategoryId = generateProductCategoryId;
+
+export const buildProductCategoryQuery = (identifier, includeDeleted = true) => {
+  if (!identifier) return { _id: null };
+  const str = String(identifier).trim();
+  const isObjectId = mongoose.Types.ObjectId.isValid(str);
+  const query = {
+    $or: isObjectId
+      ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
+      : [
+          { id: str },
+          { categoryName: { $regex: `^${str}$`, $options: "i" } },
+        ],
+  };
+  if (!includeDeleted) {
+    query.isDeleted = false;
+  }
+  return query;
+};
+
+export const buildCategoryQuery = buildProductCategoryQuery;
+
+/* ================= BLOG HELPERS ================= */
+export const generateBlogId = async () => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const BlogModel = Blog || mongoose.models.Blog || mongoose.model("Blog");
+      const blogs = await BlogModel.find({ id: /^BLOG-\d+$/ }).select("id").lean().maxTimeMS(5000);
+
+      let maxNum = 0;
+      for (const b of blogs) {
+        const match = b.id?.match(/^BLOG-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+
+      const nextNum = maxNum + 1;
+      const padLength = Math.max(3, String(nextNum).length);
+      return `BLOG-${String(nextNum).padStart(padLength, "0")}`;
+    }
+  } catch {}
+  return `BLOG-${Date.now().toString().slice(-4)}`;
+};
+
+export const buildBlogQuery = (identifier, includeDeleted = true) => {
+  if (!identifier) return { _id: null };
+  const str = String(identifier).trim();
+  const isObjectId = mongoose.Types.ObjectId.isValid(str);
+  const query = {
+    $or: isObjectId
+      ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
+      : [
+          { id: str },
+          { blogName: { $regex: `^${str}$`, $options: "i" } },
+        ],
+  };
+  if (!includeDeleted) {
+    query.isDeleted = false;
+  }
+  return query;
+};
+
+/* ================= BLOG CATEGORY HELPERS ================= */
+export const generateBlogCategoryId = async () => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const BlogCatModel = BlogCategory || mongoose.models.BlogCategory || mongoose.model("BlogCategory");
+      const categories = await BlogCatModel.find({ id: /^BCAT-\d+$/ }).select("id").lean().maxTimeMS(5000);
+
+      let maxNum = 0;
+      for (const c of categories) {
+        const match = c.id?.match(/^BCAT-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+
+      const nextNum = maxNum + 1;
+      const padLength = Math.max(3, String(nextNum).length);
+      return `BCAT-${String(nextNum).padStart(padLength, "0")}`;
+    }
+  } catch {}
+  return `BCAT-${Date.now().toString().slice(-4)}`;
+};
+
+export const buildBlogCategoryQuery = (identifier, includeDeleted = true) => {
+  if (!identifier) return { _id: null };
+  const str = String(identifier).trim();
+  const isObjectId = mongoose.Types.ObjectId.isValid(str);
+  const query = {
+    $or: isObjectId
+      ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
+      : [
+          { id: str },
+          { categoryName: { $regex: `^${str}$`, $options: "i" } },
+        ],
   };
   if (!includeDeleted) {
     query.isDeleted = false;
@@ -344,20 +403,26 @@ export const buildCmsQuery = (identifier, includeDeleted = true) => {
 
 /* ================= SEO HELPERS ================= */
 export const generateSeoId = async () => {
-  const seoList = await SEO.find({ id: /^SEO-\d+$/ }).select("id").lean();
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const SeoModel = SEO || mongoose.models.SEO || mongoose.model("SEO");
+      const seoList = await SeoModel.find({ id: /^SEO-\d+$/ }).select("id").lean().maxTimeMS(5000);
 
-  let maxNum = 0;
-  for (const s of seoList) {
-    const match = s.id?.match(/^SEO-(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
+      let maxNum = 0;
+      for (const s of seoList) {
+        const match = s.id?.match(/^SEO-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+
+      const nextNum = maxNum + 1;
+      const padLength = Math.max(3, String(nextNum).length);
+      return `SEO-${String(nextNum).padStart(padLength, "0")}`;
     }
-  }
-
-  const nextNum = maxNum + 1;
-  const padLength = Math.max(3, String(nextNum).length);
-  return `SEO-${String(nextNum).padStart(padLength, "0")}`;
+  } catch {}
+  return `SEO-${Date.now().toString().slice(-4)}`;
 };
 
 export const buildSeoQuery = (identifier, includeDeleted = true) => {
@@ -369,9 +434,9 @@ export const buildSeoQuery = (identifier, includeDeleted = true) => {
       ? [{ _id: new mongoose.Types.ObjectId(str) }, { id: str }]
       : [
           { id: str },
-          { name: new RegExp(`^${str}$`, "i") },
-          { page: new RegExp(`^${str}$`, "i") },
+          { name: { $regex: `^${str}$`, $options: "i" } },
           { path: str },
+          { page: { $regex: `^${str}$`, $options: "i" } },
         ],
   };
   if (!includeDeleted) {

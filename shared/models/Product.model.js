@@ -47,7 +47,8 @@ const reviewSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
     },
   },
   {
@@ -122,7 +123,7 @@ const productSchema = new mongoose.Schema(
 
     severity: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
+      enum: ["pending", "approved", "rejected", "low", "medium", "high"],
       default: "pending",
       lowercase: true,
       trim: true,
@@ -172,40 +173,57 @@ const productSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
     },
   },
   {
     timestamps: true,
     versionKey: "__v",
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-/* ================= AUTO GENERATE PRODUCT ID ================= */
+/* ================= VIRTUALS ================= */
+productSchema.virtual("name").get(function () {
+  return this.productName;
+}).set(function (val) {
+  this.productName = val;
+});
+
+/* ================= AUTO GENERATE PRODUCT ID (PROD-001) ================= */
 productSchema.pre("validate", async function () {
   if (!this.id || !this.id.trim()) {
-    const products = await mongoose
-      .model("Product")
-      .find({ id: /^PROD-\d+$/ })
-      .select("id")
-      .lean();
+    try {
+      if (mongoose.connection.readyState === 1) {
+        const Model = this.constructor || mongoose.models.Product || mongoose.model("Product");
+        const products = await Model.find({ id: /^PROD-\d+$/ })
+          .select("id")
+          .lean()
+          .maxTimeMS(5000);
 
-    let maxNum = 0;
-    for (const p of products) {
-      const match = p.id?.match(/^PROD-(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
+        let maxNum = 0;
+        for (const p of products) {
+          const match = p.id?.match(/^PROD-(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        }
+
+        const nextNum = maxNum + 1;
+        const padLength = Math.max(3, String(nextNum).length);
+        this.id = `PROD-${String(nextNum).padStart(padLength, "0")}`;
+      } else {
+        this.id = `PROD-${Date.now().toString().slice(-3)}`;
       }
+    } catch {
+      this.id = `PROD-${Date.now().toString().slice(-3)}`;
     }
-
-    const nextNum = maxNum + 1;
-    const padLength = Math.max(3, String(nextNum).length);
-    this.id = `PROD-${String(nextNum).padStart(padLength, "0")}`;
   }
 });
 
-const Product = mongoose.model("Product", productSchema);
+const Product = mongoose.models.Product || mongoose.model("Product", productSchema, "products");
 
 export default Product;
-

@@ -3,7 +3,6 @@ export const roles = {
   CUSTOMER: "customer",
   ACCOUNTANT: "accountant",
   MANAGER: "manager",
-  PRODUCT: "product",
   ARCHIVED: "archived",
 };
 

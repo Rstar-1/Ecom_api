@@ -40,10 +40,16 @@ const leadSchema = new mongoose.Schema(
       trim: true,
     },
 
+    notes: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     severity: {
       type: String,
-      enum: ["pending", "processing", "approved", "rejected"],
-      default: "pending",
+      enum: ["high", "medium", "low"],
+      default: "low",
       lowercase: true,
       trim: true,
     },
@@ -61,37 +67,91 @@ const leadSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
     },
   },
   {
     timestamps: true,
     versionKey: "__v",
-  }
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  },
 );
 
-/* ================= AUTO GENERATE LEAD ID (LED-001) ================= */
+/* ================= VIRTUALS FOR UI FIELD COMPATIBILITY ================= */
+leadSchema.virtual("leadFullName").get(function () {
+  return this.name;
+}).set(function (val) {
+  this.name = val;
+});
+
+leadSchema.virtual("mobileNumber").get(function () {
+  return this.mobile;
+}).set(function (val) {
+  this.mobile = val;
+});
+
+leadSchema.virtual("emailAddress").get(function () {
+  return this.email;
+}).set(function (val) {
+  this.email = val;
+});
+
+leadSchema.virtual("requirementDetails").get(function () {
+  return this.notes || this.description;
+}).set(function (val) {
+  this.description = val;
+  this.notes = val;
+});
+
+leadSchema.virtual("publishedStatus").get(function () {
+  return this.isActive;
+}).set(function (val) {
+  this.isActive = val;
+});
+
+/* ================= AUTO GENERATE LEAD ID (LED-001) & SYNC NOTES ================= */
 leadSchema.pre("validate", async function () {
   if (!this.id || !this.id.trim()) {
-    const Model = this.constructor || mongoose.models.Lead || mongoose.model("Lead");
-    const leads = await Model.find({ id: /^LED-\d+$/ }).select("id").lean();
+    try {
+      if (mongoose.connection.readyState === 1) {
+        const Model =
+          this.constructor || mongoose.models.Lead || mongoose.model("Lead");
+        const leads = await Model.find({ id: /^LED-\d+$/ })
+          .select("id")
+          .lean()
+          .maxTimeMS(5000);
 
-    let maxNum = 0;
-    for (const l of leads) {
-      const match = l.id?.match(/^LED-(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
+        let maxNum = 0;
+        for (const l of leads) {
+          const match = l.id?.match(/^LED-(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        }
+
+        const nextNum = maxNum + 1;
+        const padLength = Math.max(3, String(nextNum).length);
+        this.id = `LED-${String(nextNum).padStart(padLength, "0")}`;
+      } else {
+        this.id = `LED-${Date.now().toString().slice(-3)}`;
       }
+    } catch {
+      this.id = `LED-${Date.now().toString().slice(-3)}`;
     }
+  }
 
-    const nextNum = maxNum + 1;
-    const padLength = Math.max(3, String(nextNum).length);
-    this.id = `LED-${String(nextNum).padStart(padLength, "0")}`;
+  // Keep description and notes synchronized
+  if (this.notes && !this.description) {
+    this.description = this.notes;
+  } else if (this.description && !this.notes) {
+    this.notes = this.description;
   }
 });
 
-const Lead = mongoose.models.Lead || mongoose.model("Lead", leadSchema, "leads");
+const Lead =
+  mongoose.models.Lead || mongoose.model("Lead", leadSchema, "leads");
 
 export default Lead;
-

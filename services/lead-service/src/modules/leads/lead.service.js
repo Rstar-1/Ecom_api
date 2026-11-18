@@ -21,22 +21,51 @@ const resolveCreatorId = async (providedId) => {
     }).select("_id");
     if (userDoc) return userDoc._id;
   }
-  const defaultUser = await User.findOne({ isDeleted: false }).select("_id");
-  return defaultUser ? defaultUser._id : new mongoose.Types.ObjectId("6a8691ede8fdc4bafebc857b");
+  try {
+    const defaultUser = await User.findOne({ isDeleted: false }).select("_id");
+    if (defaultUser) return defaultUser._id;
+  } catch {}
+  return null;
 };
 
 /* ================= CREATE LEAD ================= */
 export const createLead = async (data = {}) => {
-  const name = (data.name || "").trim();
-  const mobile = (data.mobile || "").trim();
+  const name = (data.name || data.leadFullName || data.fullName || "").trim();
+  const mobile = (data.mobile || data.mobileNumber || data.phone || data.contactNumber || "").trim();
+  const email = (data.email || data.emailAddress || "").trim().toLowerCase();
+  const location = (data.location || data.address || data.city || "").trim();
+  const notes = (data.requirementDetails || data.notes || data.description || data.requirements || "").trim();
+
+  let severity = "low";
+  if (data.severity) {
+    const sev = String(data.severity).trim().toLowerCase();
+    if (["low", "medium", "high"].includes(sev)) {
+      severity = sev;
+    }
+  }
+
+  let isActive = true;
+  if (data.publishedStatus !== undefined) {
+    isActive =
+      data.publishedStatus === true ||
+      data.publishedStatus === "true" ||
+      data.publishedStatus === 1 ||
+      data.publishedStatus === "1";
+  } else if (data.isActive !== undefined) {
+    isActive =
+      data.isActive === true ||
+      data.isActive === "true" ||
+      data.isActive === 1 ||
+      data.isActive === "1";
+  }
 
   if (!name) {
-    const error = new Error("Lead name is required");
+    const error = new Error("Lead Full Name is required");
     error.statusCode = 400;
     throw error;
   }
   if (!mobile) {
-    const error = new Error("Mobile number is required");
+    const error = new Error("Mobile Number is required");
     error.statusCode = 400;
     throw error;
   }
@@ -52,27 +81,35 @@ export const createLead = async (data = {}) => {
   const id = (data.id && data.id.trim()) || (await generateLeadId());
   const createdBy = await resolveCreatorId(data.createdBy);
 
-  const lead = await Lead.create({
+  const leadPayload = {
     id,
     name,
     mobile,
-    email: (data.email || "").trim().toLowerCase(),
-    location: (data.location || "").trim(),
-    description: (data.description || "").trim(),
-    severity: data.severity ? String(data.severity).toLowerCase() : "pending",
-    isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+    email,
+    location,
+    description: notes,
+    notes,
+    severity,
+    isActive,
     isDeleted: data.isDeleted !== undefined ? Boolean(data.isDeleted) : false,
-    createdBy,
-  });
+  };
 
-  await lead.populate("createdBy", "id fullname email mobile image");
+  if (createdBy) {
+    leadPayload.createdBy = createdBy;
+  }
+
+  const lead = await Lead.create(leadPayload);
+
+  if (lead.createdBy) {
+    await lead.populate("createdBy", "id fullname email mobile image");
+  }
   info(`LEAD_CREATED: ${lead.name} (${lead.id})`);
   return lead;
 };
 
-/* ================= GET ALL LEADS (PAGINATED) ================= */
+/* ================= GET ALL LEADS (PAGINATED & FILTERED) ================= */
 export const getLeads = async (query = {}) => {
-  const { isDeleted, isActive, severity, search, page, limit } = query;
+  const { isDeleted, isActive, publishedStatus, severity, search, page, limit } = query;
 
   const filter = {};
   if (isDeleted !== undefined) {
@@ -81,8 +118,9 @@ export const getLeads = async (query = {}) => {
     filter.isDeleted = false;
   }
 
-  if (isActive !== undefined) {
-    filter.isActive = isActive === "true" || isActive === true;
+  const activeStatus = publishedStatus !== undefined ? publishedStatus : isActive;
+  if (activeStatus !== undefined) {
+    filter.isActive = activeStatus === "true" || activeStatus === true;
   }
 
   if (severity) {
@@ -97,6 +135,8 @@ export const getLeads = async (query = {}) => {
       { mobile: { $regex: s, $options: "i" } },
       { email: { $regex: s, $options: "i" } },
       { location: { $regex: s, $options: "i" } },
+      { description: { $regex: s, $options: "i" } },
+      { notes: { $regex: s, $options: "i" } },
     ];
   }
 
@@ -117,7 +157,7 @@ export const getLeads = async (query = {}) => {
     queryBuilder = queryBuilder.skip(skip).limit(currentLimit);
   }
 
-  const leads = await queryBuilder.lean();
+  const leads = await queryBuilder.lean({ virtuals: true });
 
   if (isPaginated) {
     return {
@@ -161,27 +201,86 @@ export const updateLead = async (identifier, data = {}) => {
     throw error;
   }
 
-  if (data.name !== undefined) lead.name = String(data.name).trim();
-  if (data.mobile !== undefined) lead.mobile = String(data.mobile).trim();
-  if (data.email !== undefined) lead.email = String(data.email).trim().toLowerCase();
-  if (data.location !== undefined) lead.location = String(data.location).trim();
-  if (data.description !== undefined) lead.description = String(data.description).trim();
-  if (data.severity !== undefined) lead.severity = String(data.severity).toLowerCase().trim();
-  if (data.isActive !== undefined) lead.isActive = Boolean(data.isActive);
+  const name =
+    data.name !== undefined
+      ? data.name
+      : data.leadFullName !== undefined
+      ? data.leadFullName
+      : data.fullName;
+  if (name !== undefined) lead.name = String(name).trim();
+
+  const mobile =
+    data.mobile !== undefined
+      ? data.mobile
+      : data.mobileNumber !== undefined
+      ? data.mobileNumber
+      : data.phone !== undefined
+      ? data.phone
+      : data.contactNumber;
+  if (mobile !== undefined) lead.mobile = String(mobile).trim();
+
+  const email = data.email !== undefined ? data.email : data.emailAddress;
+  if (email !== undefined) lead.email = String(email).trim().toLowerCase();
+
+  const location =
+    data.location !== undefined
+      ? data.location
+      : data.address !== undefined
+      ? data.address
+      : data.city;
+  if (location !== undefined) lead.location = String(location).trim();
+
+  const notes =
+    data.requirementDetails !== undefined
+      ? data.requirementDetails
+      : data.notes !== undefined
+      ? data.notes
+      : data.description !== undefined
+      ? data.description
+      : data.requirements;
+  if (notes !== undefined) {
+    lead.description = String(notes).trim();
+    lead.notes = String(notes).trim();
+  }
+
+  if (data.severity !== undefined) {
+    const sev = String(data.severity).trim().toLowerCase();
+    if (["low", "medium", "high"].includes(sev)) {
+      lead.severity = sev;
+    }
+  }
+
+  if (data.publishedStatus !== undefined) {
+    lead.isActive =
+      data.publishedStatus === true ||
+      data.publishedStatus === "true" ||
+      data.publishedStatus === 1 ||
+      data.publishedStatus === "1";
+  } else if (data.isActive !== undefined) {
+    lead.isActive =
+      data.isActive === true ||
+      data.isActive === "true" ||
+      data.isActive === 1 ||
+      data.isActive === "1";
+  }
+
   if (data.isDeleted !== undefined) lead.isDeleted = Boolean(data.isDeleted);
   if (data.createdBy !== undefined) {
-    lead.createdBy = await resolveCreatorId(data.createdBy);
+    const creator = await resolveCreatorId(data.createdBy);
+    if (creator) lead.createdBy = creator;
   }
 
   await lead.save();
-  await lead.populate("createdBy", "id fullname email mobile image");
+  if (lead.createdBy) {
+    await lead.populate("createdBy", "id fullname email mobile image");
+  }
   info(`LEAD_UPDATED: ${lead.name} (${lead.id})`);
   return lead;
 };
 
 /* ================= UPDATE LEAD SEVERITY ================= */
 export const updateLeadSeverity = async (identifier, severity) => {
-  const allowed = ["pending", "approved", "rejected"];
+  const allowed = ["low", "medium", "high"];
   const normalized = String(severity || "").toLowerCase().trim();
   if (!allowed.includes(normalized)) {
     const error = new Error(`Severity must be one of: ${allowed.join(", ")}`);
@@ -244,4 +343,3 @@ export const bulkDeleteLeads = async ({ ids = [], permanent = false }) => {
     modifiedCount: result.modifiedCount,
   };
 };
-

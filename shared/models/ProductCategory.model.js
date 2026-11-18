@@ -51,35 +51,54 @@ const categorySchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
     },
   },
   {
     timestamps: true,
     versionKey: "__v",
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-/* ================= AUTO GENERATE CATEGORY ID ================= */
+/* ================= VIRTUALS ================= */
+categorySchema.virtual("name").get(function () {
+  return this.categoryName;
+}).set(function (val) {
+  this.categoryName = val;
+});
+
+/* ================= AUTO GENERATE CATEGORY ID (PCAT-001) ================= */
 categorySchema.pre("validate", async function () {
   if (!this.id || !this.id.trim()) {
-    const Model = this.constructor || mongoose.models.ProductCategory || mongoose.model("ProductCategory");
-    const categories = await Model.find({ id: /^PCAT-\d+$/ })
-      .select("id")
-      .lean();
+    try {
+      if (mongoose.connection.readyState === 1) {
+        const Model = this.constructor || mongoose.models.ProductCategory || mongoose.model("ProductCategory");
+        const categories = await Model.find({ id: /^PCAT-\d+$/ })
+          .select("id")
+          .lean()
+          .maxTimeMS(5000);
 
-    let maxNum = 0;
-    for (const c of categories) {
-      const match = c.id?.match(/^PCAT-(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
+        let maxNum = 0;
+        for (const c of categories) {
+          const match = c.id?.match(/^PCAT-(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        }
+
+        const nextNum = maxNum + 1;
+        const padLength = Math.max(3, String(nextNum).length);
+        this.id = `PCAT-${String(nextNum).padStart(padLength, "0")}`;
+      } else {
+        this.id = `PCAT-${Date.now().toString().slice(-3)}`;
       }
+    } catch {
+      this.id = `PCAT-${Date.now().toString().slice(-3)}`;
     }
-
-    const nextNum = maxNum + 1;
-    const padLength = Math.max(3, String(nextNum).length);
-    this.id = `PCAT-${String(nextNum).padStart(padLength, "0")}`;
   }
 });
 
@@ -89,7 +108,9 @@ const ProductCategory =
 
 // Ensure legacy ref: "Category" also resolves to this collection
 if (!mongoose.models.Category) {
-  mongoose.model("Category", categorySchema, "categories");
+  try {
+    mongoose.model("Category", categorySchema, "categories");
+  } catch {}
 }
 
 export default ProductCategory;

@@ -4,8 +4,7 @@ import { env } from "../config/env.js";
 
 const router = express.Router();
 
-// Routes to lead-service
+// Forward /api/leads to lead-service
 router.use("/api/leads", createProxy(env.LEAD_SERVICE_URL));
 
 export default router;
-

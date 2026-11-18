@@ -4,9 +4,7 @@ import { env } from "../config/env.js";
 
 const router = express.Router();
 
-// Routes to blog-service
-router.use("/api/blog-categories", createProxy(env.BLOG_SERVICE_URL));
 router.use("/api/blogs", createProxy(env.BLOG_SERVICE_URL));
+router.use("/api/blog-categories", createProxy(env.BLOG_SERVICE_URL));
 
 export default router;
-

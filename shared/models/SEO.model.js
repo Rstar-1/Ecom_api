@@ -102,33 +102,44 @@ const seoSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
     },
   },
   {
     timestamps: true,
     versionKey: "__v",
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
 /* ================= AUTO GENERATE SEO ID (SEO-001) ================= */
 seoSchema.pre("validate", async function () {
   if (!this.id || !this.id.trim()) {
-    const Model = this.constructor || mongoose.models.SEO || mongoose.model("SEO");
-    const seoList = await Model.find({ id: /^SEO-\d+$/ }).select("id").lean();
+    try {
+      if (mongoose.connection.readyState === 1) {
+        const Model = this.constructor || mongoose.models.SEO || mongoose.model("SEO");
+        const seoList = await Model.find({ id: /^SEO-\d+$/ }).select("id").lean().maxTimeMS(5000);
 
-    let maxNum = 0;
-    for (const s of seoList) {
-      const match = s.id?.match(/^SEO-(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
+        let maxNum = 0;
+        for (const s of seoList) {
+          const match = s.id?.match(/^SEO-(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        }
+
+        const nextNum = maxNum + 1;
+        const padLength = Math.max(3, String(nextNum).length);
+        this.id = `SEO-${String(nextNum).padStart(padLength, "0")}`;
+      } else {
+        this.id = `SEO-${Date.now().toString().slice(-3)}`;
       }
+    } catch {
+      this.id = `SEO-${Date.now().toString().slice(-3)}`;
     }
-
-    const nextNum = maxNum + 1;
-    const padLength = Math.max(3, String(nextNum).length);
-    this.id = `SEO-${String(nextNum).padStart(padLength, "0")}`;
   }
 
   if (!this.page && this.name) {
@@ -139,4 +150,3 @@ seoSchema.pre("validate", async function () {
 const SEO = mongoose.models.SEO || mongoose.model("SEO", seoSchema, "seos");
 
 export default SEO;
-

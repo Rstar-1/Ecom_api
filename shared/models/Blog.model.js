@@ -44,7 +44,8 @@ const reviewSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
     },
   },
   {
@@ -129,39 +130,63 @@ const blogSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
     },
   },
   {
     timestamps: true,
     versionKey: "__v",
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-/* ================= AUTO GENERATE BLOG ID ================= */
+/* ================= VIRTUALS ================= */
+blogSchema.virtual("name").get(function () {
+  return this.blogName;
+}).set(function (val) {
+  this.blogName = val;
+});
+
+blogSchema.virtual("title").get(function () {
+  return this.blogName;
+}).set(function (val) {
+  this.blogName = val;
+});
+
+/* ================= AUTO GENERATE BLOG ID (BLOG-001) ================= */
 blogSchema.pre("validate", async function () {
   if (!this.id || !this.id.trim()) {
-    const Model = this.constructor || mongoose.models.Blog || mongoose.model("Blog");
-    const blogs = await Model.find({ id: /^BLOG-\d+$/ })
-      .select("id")
-      .lean();
+    try {
+      if (mongoose.connection.readyState === 1) {
+        const Model = this.constructor || mongoose.models.Blog || mongoose.model("Blog");
+        const blogs = await Model.find({ id: /^BLOG-\d+$/ })
+          .select("id")
+          .lean()
+          .maxTimeMS(5000);
 
-    let maxNum = 0;
-    for (const b of blogs) {
-      const match = b.id?.match(/^BLOG-(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
+        let maxNum = 0;
+        for (const b of blogs) {
+          const match = b.id?.match(/^BLOG-(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        }
+
+        const nextNum = maxNum + 1;
+        const padLength = Math.max(3, String(nextNum).length);
+        this.id = `BLOG-${String(nextNum).padStart(padLength, "0")}`;
+      } else {
+        this.id = `BLOG-${Date.now().toString().slice(-3)}`;
       }
+    } catch {
+      this.id = `BLOG-${Date.now().toString().slice(-3)}`;
     }
-
-    const nextNum = maxNum + 1;
-    const padLength = Math.max(3, String(nextNum).length);
-    this.id = `BLOG-${String(nextNum).padStart(padLength, "0")}`;
   }
 });
 
 const Blog = mongoose.models.Blog || mongoose.model("Blog", blogSchema, "blogs");
 
 export default Blog;
-

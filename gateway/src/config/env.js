@@ -12,8 +12,8 @@ export const env = {
   PRODUCT_SERVICE_URL: process.env.PRODUCT_SERVICE_URL || "http://localhost:8084",
   BLOG_SERVICE_URL: process.env.BLOG_SERVICE_URL || "http://localhost:8085",
   LEAD_SERVICE_URL: process.env.LEAD_SERVICE_URL || "http://localhost:8086",
-  CMS_SERVICE_URL: process.env.CMS_SERVICE_URL || "http://localhost:8087",
+  CAMPAIGN_SERVICE_URL: process.env.CAMPAIGN_SERVICE_URL || "http://localhost:8087",
   SEO_SERVICE_URL: process.env.SEO_SERVICE_URL || "http://localhost:8088",
   RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
-  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX) || 10000
+  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX) || 10000,
 };

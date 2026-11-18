@@ -11,10 +11,10 @@
     "product:dev": "npm --prefix services/product-service run dev",
     "blog:dev": "npm --prefix services/blog-service run dev",
     "lead:dev": "npm --prefix services/lead-service run dev",
-    "cms:dev": "npm --prefix services/cms-service run dev",
+    "campaign:dev": "npm --prefix services/campaign-service run dev",
     "seo:dev": "npm --prefix services/seo-service run dev",
     "gateway:dev": "npm --prefix gateway run dev",
-    "dev": "concurrently -k -n AUTH,USER,ROLE,PRODUCT,BLOG,LEAD,CMS,SEO,GATEWAY -c blue,green,purple,yellow,magenta,gray,red,white,cyan \"npm run auth:dev\" \"npm run user:dev\" \"npm run role:dev\" \"npm run product:dev\" \"npm run blog:dev\" \"npm run lead:dev\" \"npm run cms:dev\" \"npm run seo:dev\" \"npm run gateway:dev\""
+    "dev": "concurrently -k -n AUTH,USER,ROLE,PRODUCT,BLOG,LEAD,CAMPAIGN,SEO,GATEWAY -c blue,green,purple,red,yellow,magenta,cyan,white,gray \"npm run auth:dev\" \"npm run user:dev\" \"npm run role:dev\" \"npm run product:dev\" \"npm run blog:dev\" \"npm run lead:dev\" \"npm run campaign:dev\" \"npm run seo:dev\" \"npm run gateway:dev\""
   },
   "keywords": [],
   "author": "",
@@ -33,6 +33,8 @@
     "mongoose": "^9.6.1",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
-    "nodemon": "^3.1.14"
+    "nodemailer": "^10.6.0",
+    "nodemon": "^3.1.14",
+    "twilio": "^6.3.0"
   }
 }

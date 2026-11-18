@@ -4,8 +4,6 @@ import { env } from "../config/env.js";
 
 const router = express.Router();
 
-// Routes to seo-service
 router.use("/api/seo", createProxy(env.SEO_SERVICE_URL));
 
 export default router;
-

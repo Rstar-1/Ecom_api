@@ -7,6 +7,6 @@ export const services = {
   product: env.PRODUCT_SERVICE_URL || "http://localhost:8084",
   blog: env.BLOG_SERVICE_URL || "http://localhost:8085",
   lead: env.LEAD_SERVICE_URL || "http://localhost:8086",
-  cms: env.CMS_SERVICE_URL || "http://localhost:8087",
+  campaign: env.CAMPAIGN_SERVICE_URL || "http://localhost:8087",
   seo: env.SEO_SERVICE_URL || "http://localhost:8088",
 };
