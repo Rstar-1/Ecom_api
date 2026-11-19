@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authMiddleware, upload } from "../../middlewares";
-import { login, logout, register, verifyOtp } from "./auth.controller";
+import { login, logout, register, verifyOtp,test } from "./auth.controller";
 
 const router = Router();
 
@@ -16,6 +16,8 @@ router.post(
 );
 router.post("/verify-otp", verifyOtp);
 router.post("/login", login);
+router.get("/test", test);
+
 router.post("/logout", authMiddleware, logout);
 
 export default router;

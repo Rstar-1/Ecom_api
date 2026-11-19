@@ -33,6 +33,17 @@ export const login: ApiHandler<EmptyParams, LoginBody> = async (req, res, next) 
   }
 };
 
+export const test: ApiHandler = async (_req, res, next) => {
+  try {
+    successResponse(res, "data", "Test successful");
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
+
 /* POST /api/auth/logout */
 export const logout: ApiHandler = async (_req, res, next) => {
   try {
