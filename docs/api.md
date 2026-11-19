@@ -4,24 +4,15 @@ This document contains all API endpoints for the e-commerce platform.
 
 ## Overview
 
-The platform provides four main services with REST APIs:
-- **Auth Service** - User authentication and account management
-- **Product Service** - Product catalog and inventory
-- **Cart Service** - Shopping cart management
-- **Order Service** - Order creation and processing
-
-All requests go through the **API Gateway** (Port 5000).
+All modules (auth, users, roles, products, categories, cart, orders, payments) are served by a single
+application under the `/api` prefix.
 
 ---
 
 ## Base URLs
 
 ```
-Gateway:       http://localhost:5000
-Auth Service:  http://localhost:3001/api/auth
-Product Service: http://localhost:3002/api/products
-Cart Service:  http://localhost:3003/api/cart
-Order Service: http://localhost:3004/api/orders
+http://localhost:<PORT>/api
 ```
 
 ---

@@ -33,7 +33,7 @@ header.payload.signature
   "iat": 1713607200,
   "exp": 1713610800,
   "iss": "ecommerce-auth-service",
-  "aud": "ecommerce-gateway"
+  "aud": "ecom-api"
 }
 ```
 
@@ -51,7 +51,7 @@ HMACSHA256(
 1. **Generation**: User logs in, Auth Service creates JWT
 2. **Storage**: Client stores token (localStorage, sessionStorage, or secure cookie)
 3. **Usage**: Client includes token in Authorization header
-4. **Validation**: Gateway validates token on each request
+4. **Validation**: API validates the token on each protected request
 5. **Expiration**: Token expires after configured time (default: 24 hours)
 6. **Refresh**: Client can refresh token before expiration
 
@@ -144,7 +144,7 @@ app.post('/admin/users', requireRole(['admin']), controller.createUser);
 
 ### Authorization Process
 1. Client sends request with Authorization header
-2. Gateway extracts and validates JWT
+2. authMiddleware extracts and validates the JWT
 3. If valid:
    - Decode token
    - Attach user data to request
