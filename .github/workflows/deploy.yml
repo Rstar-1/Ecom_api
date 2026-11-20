@@ -1,3 +1,4 @@
+
 name: Deploy Node.js App to AWS EC2
 
 on:
@@ -19,25 +20,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      # 3. Install dependencies
       - name: Install dependencies
         run: npm ci
 
+      # 4. Run tests
       - name: Run tests
         run: npm test --if-present
 
+      # 5. Copy Node.js application to EC2
       - name: Copy Node.js application to EC2
         uses: burnett01/rsync-deployments@v8
         with:
-          switches: -avzr --delete --exclude="node_modules" --exclude=".git" --exclude=".env" --exclude=".env.*" --exclude="*.log"
+          switches: >-
+            -avzr
+            --delete
+            --exclude=node_modules
+            --exclude=.git
+            --exclude=.github
+            --exclude=.env
+            --exclude=.env.*
+            --exclude=*.log
           path: ./
           remote_path: /home/ubuntu/Ecom_api/
           remote_host: ${{ secrets.EC2_HOST }}
@@ -45,7 +59,8 @@ jobs:
           remote_key: ${{ secrets.EC2_SSH_KEY }}
           remote_port: 22
 
-      - name: Restart Node.js application on EC2
+      # 6. Install dependencies and restart PM2
+      - name: Restart Node.js application
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -59,24 +74,33 @@ jobs:
 
             npm ci --omit=dev
 
-            # Stop previous application running on port 3000
-            PID=$(sudo lsof -t -i:3000 || true)
-
-            if [ -n "$PID" ]; then
-              echo "Stopping existing process on port 3000..."
-              sudo kill $PID || true
-              sleep 2
+            # Start or restart backend using PM2
+            if pm2 describe ecom-api > /dev/null 2>&1; then
+              pm2 restart ecom-api --update-env
+            else
+              pm2 start npm --name ecom-api -- start
             fi
 
-            # Start Node.js backend using nohup
-            nohup npm start > backend.log 2>&1 &
+            # Save PM2 process list
+            pm2 save
 
-            sleep 3
+            # Check application status
+            pm2 status
 
-            echo "Deployment completed successfully"
+            echo "Node.js deployment completed successfully"
 
-            # Verify process
-            ps aux | grep '[n]pm start'
+      # 7. Verify Nginx
+      - name: Reload Nginx
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
 
-            echo "Backend logs:"
-            tail -n 20 backend.log
+            sudo nginx -t
+            sudo systemctl reload nginx
+
+            echo "Nginx reloaded successfully"
