@@ -44,6 +44,8 @@ export const test: ApiHandler = async (_req, res, next) => {
 
 
 
+
+
 /* POST /api/auth/logout */
 export const logout: ApiHandler = async (_req, res, next) => {
   try {
