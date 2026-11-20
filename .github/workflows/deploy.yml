@@ -1,4 +1,3 @@
-
 name: Deploy Node.js App to AWS EC2
 
 on:
@@ -60,14 +59,24 @@ jobs:
 
             npm ci --omit=dev
 
-            if pm2 describe ecom-api > /dev/null 2>&1; then
-              pm2 restart ecom-api --update-env
-            else
-              pm2 start npm --name ecom-api -- start
+            # Stop previous application running on port 3000
+            PID=$(sudo lsof -t -i:3000 || true)
+
+            if [ -n "$PID" ]; then
+              echo "Stopping existing process on port 3000..."
+              sudo kill $PID || true
+              sleep 2
             fi
 
-            pm2 save
+            # Start Node.js backend using nohup
+            nohup npm start > backend.log 2>&1 &
+
+            sleep 3
 
             echo "Deployment completed successfully"
 
-            pm2 status
+            # Verify process
+            ps aux | grep '[n]pm start'
+
+            echo "Backend logs:"
+            tail -n 20 backend.log

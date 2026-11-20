@@ -43,6 +43,11 @@ export interface Env {
   readonly TWILIO_PHONE_NUMBER: string | undefined;
   readonly TWILIO_WHATSAPP_NUMBER: string;
   readonly TWILIO_STATUS_CALLBACK_URL: string | undefined;
+  readonly WHATSAPP_ACCESS_TOKEN: string | undefined;
+  readonly WHATSAPP_PHONE_NUMBER_ID: string | undefined;
+  readonly WHATSAPP_API_VERSION: string;
+  readonly WHATSAPP_DEFAULT_TEMPLATE: string | undefined;
+  readonly WHATSAPP_TEMPLATE_LANGUAGE: string;
   readonly SMTP_HOST: string;
   readonly SMTP_PORT: number;
   readonly SMTP_SECURE: boolean;
@@ -70,6 +75,11 @@ export const ENV: Env = Object.freeze({
   TWILIO_PHONE_NUMBER: optional("TWILIO_PHONE_NUMBER"),
   TWILIO_WHATSAPP_NUMBER: optional("TWILIO_WHATSAPP_NUMBER") ?? "whatsapp:+14155238886",
   TWILIO_STATUS_CALLBACK_URL: optional("TWILIO_STATUS_CALLBACK_URL"),
+  WHATSAPP_ACCESS_TOKEN: optional("WHATSAPP_ACCESS_TOKEN"),
+  WHATSAPP_PHONE_NUMBER_ID: optional("WHATSAPP_PHONE_NUMBER_ID"),
+  WHATSAPP_API_VERSION: optional("WHATSAPP_API_VERSION") ?? "v25.0",
+  WHATSAPP_DEFAULT_TEMPLATE: optional("WHATSAPP_DEFAULT_TEMPLATE"),
+  WHATSAPP_TEMPLATE_LANGUAGE: optional("WHATSAPP_TEMPLATE_LANGUAGE") ?? "en_US",
   SMTP_HOST: optional("SMTP_HOST") ?? "smtp.gmail.com",
   SMTP_PORT: toNumber("SMTP_PORT", 587),
   SMTP_SECURE: process.env.SMTP_SECURE === "true" || process.env.SMTP_PORT === "465",
