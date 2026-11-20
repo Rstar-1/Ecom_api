@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { ENV } from "../../config/env";
-import { messages, PERMISSIONS } from "../../constants";
+import { messages, PERMISSIONS, roles } from "../../constants";
 import { hasPermission } from "../../middlewares";
 import { Otp, Role, User } from "../../models";
 import type { AuthUser } from "../../types/express";
@@ -30,12 +30,15 @@ const contactOr = ({ email, mobile }: ContactBody) => {
  */
 export const registerUser = async (data: RegisterBody, requester?: AuthUser) => {
   const { email, mobile } = normalizeContact(data);
-  if (!email || !mobile) throw AppError.badRequest("Email and mobile are required");
+  if (!email && !mobile) throw AppError.badRequest("Email or mobile is required");
   if (!data.password) throw AppError.badRequest("Password is required");
   if (!str(data.fullname)) throw AppError.badRequest("Full name is required");
 
-  const exists = await User.exists({ $or: [{ email }, { mobile }], isDeleted: false });
-  if (exists) throw AppError.conflict("User already exists with this email or mobile");
+  const queryOr = contactOr({ email, mobile });
+  if (queryOr.length > 0) {
+    const exists = await User.exists({ $or: queryOr, isDeleted: false });
+    if (exists) throw AppError.conflict("User already exists with this email or mobile");
+  }
 
   const privileged = !!requester && hasPermission(requester, [PERMISSIONS.USER_CREATE]);
   const roleDoc = await resolveRole(data, privileged ? undefined : PUBLIC_SIGNUP_ROLES);
@@ -44,10 +47,11 @@ export const registerUser = async (data: RegisterBody, requester?: AuthUser) => 
   const user = await User.create({
     ...(privileged && str(data.id) ? { id: str(data.id) } : {}),
     fullname: str(data.fullname),
-    email,
-    mobile,
+    email: email || undefined,
+    mobile: mobile || undefined,
     password: data.password,
     roleId: roleDoc._id,
+    role: roleDoc.rolename,
     isActive: privileged && data.isActive !== undefined ? toBool(data.isActive) : true,
     isOtpVerified,
     image: data.image ?? "",
@@ -118,16 +122,18 @@ export const loginUser = async (body: LoginBody) => {
   user.lastLogin = new Date();
   await user.save();
 
-  const roleDoc = await Role.findById(user.roleId);
+  const roleDoc = user.roleId
+    ? await Role.findById(user.roleId)
+    : await Role.findOne({ rolename: user.role || roles.CUSTOMER });
   const summary = userWithRole(user, roleDoc);
 
   const token = jwt.generateToken(
     {
       id: user._id.toString(),
       userId: user.id,
-      email: user.email,
+      email: user.email || undefined,
       role: summary.role,
-      roleId: user.roleId.toString(),
+      roleId: (roleDoc?._id ?? user.roleId ?? "").toString(),
       permissions: summary.permissions,
     },
     ENV.JWT_SECRET,

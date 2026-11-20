@@ -6,14 +6,15 @@ const userSchema = new Schema(
   {
     id: { type: String, required: true, unique: true, trim: true }, // USER-001
     fullname: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    mobile: { type: String, required: true, trim: true },
+    email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+    mobile: { type: String, sparse: true, trim: true },
     password: { type: String, required: true, select: false },
     isOtpVerified: { type: Boolean, default: false },
     image: { type: String, default: "" },
     address: { type: [String], default: ["", ""] },
     documents: { type: Schema.Types.Mixed, default: null },
-    roleId: { type: Schema.Types.ObjectId, ref: "Role", required: true },
+    role: { type: String, trim: true, lowercase: true, default: "customer" },
+    roleId: { type: Schema.Types.ObjectId, ref: "Role", required: false },
     loginAttempts: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
