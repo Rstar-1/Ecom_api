@@ -20,27 +20,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout source code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      # 3. Install dependencies
       - name: Install dependencies
         run: npm ci
 
+      # 4. TypeScript check
       - name: TypeScript type check
         run: npm run typecheck
 
+      # 5. Build application
       - name: Build TypeScript
         run: npm run build
 
+      # 6. Run tests
       - name: Run tests
         run: npm test --if-present
 
+      # 7. Deploy files to EC2
       - name: Deploy application to EC2
         uses: burnett01/rsync-deployments@v8
         with:
@@ -54,12 +61,13 @@ jobs:
             --exclude=.env.*
             --exclude=*.log
           path: ./
-          remote_path: /home/ubuntu/Ecom_api/
+          remote_path: /var/www/Ecom_api/
           remote_host: ${{ secrets.EC2_HOST }}
           remote_user: ${{ secrets.EC2_USERNAME }}
           remote_key: ${{ secrets.EC2_SSH_KEY }}
           remote_port: 22
 
+      # 8. Install production dependencies and restart PM2
       - name: Restart application with PM2
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -67,20 +75,35 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+
           script: |
             set -e
 
-            cd /home/ubuntu/Ecom_api
+            echo "Starting deployment..."
 
+            cd /var/www/Ecom_api
+
+            echo "Installing production dependencies..."
             npm ci --omit=dev
 
-            if pm2 describe ecom-api > /dev/null 2>&1; then
-              pm2 restart ecom-api --update-env
+            echo "Checking production build..."
+            test -f dist/server.js
+
+            echo "Checking environment file..."
+            test -f .env
+
+            echo "Restarting PM2 application..."
+
+            if pm2 describe Ecom_api > /dev/null 2>&1; then
+              pm2 restart Ecom_api --update-env
             else
-              pm2 start npm --name ecom-api -- start
+              pm2 start npm --name Ecom_api -- start
             fi
 
+            echo "Saving PM2 process list..."
             pm2 save
+
+            echo "Checking PM2 status..."
             pm2 status
 
             echo "Deployment completed successfully"
