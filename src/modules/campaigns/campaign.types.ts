@@ -51,6 +51,11 @@ export interface CampaignBody {
   senderEmailAddress?: string;
   messagingServiceSid?: string;
   statusCallbackUrl?: string;
+  /** WhatsApp Cloud API template (e.g. "hello_world"). Without one, free-form text is sent. */
+  whatsappTemplateName?: string;
+  whatsappTemplateLanguage?: string;
+  /** Values for {{1}}, {{2}}… in the template body; may use {name}, {link}, {code}, {company} */
+  whatsappTemplateParams?: string[] | string;
   recipients?: RecipientInput[];
   selectedUsers?: RecipientInput[];
   targetUsers?: RecipientInput[];

@@ -49,9 +49,11 @@ export const sendCampaign: ApiHandler<EmptyParams, CampaignBody> = async (req, r
     const campaign = await service.sendCampaign(req.body ?? {}, req.user?.id);
     successResponse(res, campaign, service.sendSummary(campaign));
   } catch (error) {
+    console.error(error);
     next(error);
   }
 };
+
 
 /* GET /api/campaigns?page=&limit=&search=&channel=&status=&templateType= */
 export const getCampaigns: ApiHandler<EmptyParams, never, CampaignListQuery> = async (req, res, next) => {

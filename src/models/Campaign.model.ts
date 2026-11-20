@@ -90,6 +90,14 @@ const campaignSchema = new Schema(
       accountSid: { type: String, default: "", trim: true },
     },
 
+    /* WhatsApp Cloud API approved template (business-initiated messages need one) */
+    whatsappTemplate: {
+      name: { type: String, default: "", trim: true },
+      language: { type: String, default: "en_US", trim: true },
+      // Values for {{1}}, {{2}}… in the template body; may contain {name}, {link}…
+      params: { type: [String], default: [] },
+    },
+
     recipients: [recipientSchema],
 
     metrics: {

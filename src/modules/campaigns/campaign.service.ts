@@ -23,6 +23,7 @@ import {
   pagedResult,
   readPagination,
   searchFilter,
+  parseList,
   str,
   toBool,
   type Filter,
@@ -37,9 +38,18 @@ import type {
   TwilioStatusPayload,
 } from "./campaign.types";
 import { sendEmail } from "./mailer.service";
-import { calculateSmsSegments, interpolateTemplate, sendSMS, sendWhatsApp, type DispatchResult } from "./twilio.service";
+import {
+  calculateSmsSegments,
+  interpolateTemplate,
+  type DispatchResult,
+  type TemplateContext,
+} from "./twilio.service";
+import { isWhatsAppCloudConfigured, sendWhatsAppCloud } from "./whatsapp.service";
 
 const DEFAULT_SHORT_URL = "https://yourbrand.in/s/x7Qa";
+
+/** sms and gmail campaigns are delivered by email (Nodemailer); whatsapp uses phone numbers. */
+const sendsEmail = (channel: string): boolean => channel === "gmail" || channel === "sms";
 
 /** Validates a value against an allowed list (case-insensitive). */
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[], field: string): T => {
@@ -82,7 +92,7 @@ export const getAudienceRecipients = async (query: AudienceQuery = {}) => {
     if (term) filter.$or = ["name", "mobile", "email", "id"].map((f) => ({ [f]: containsCi(term) }));
     const leads = await Lead.find(filter).select("id name mobile email location severity").lean();
     for (const l of leads) {
-      const address = channel === "gmail" ? l.email : l.mobile;
+      const address = sendsEmail(channel) ? l.email : l.mobile;
       if (!address) continue;
       results.push({
         id: String(l._id),
@@ -105,7 +115,7 @@ export const getAudienceRecipients = async (query: AudienceQuery = {}) => {
     if (term) filter.$or = ["fullname", "email", "mobile", "id"].map((f) => ({ [f]: containsCi(term) }));
     const users = await User.find(filter).select("id fullname email mobile").lean();
     for (const u of users) {
-      const address = channel === "gmail" ? u.email : u.mobile;
+      const address = sendsEmail(channel) ? u.email : u.mobile;
       if (!address) continue;
       results.push({
         id: String(u._id),
@@ -146,8 +156,8 @@ const normalizeRecipients = async (inputs: RecipientInput[], channel: CampaignCh
   for (const item of inputs) {
     if (typeof item === "object" && item !== null) {
       const address =
-        channel === "gmail"
-          ? item.email || item.emailAddress || item.recipientAddress
+        sendsEmail(channel)
+          ? item.email || item.emailAddress || (item.recipientAddress?.includes("@") ? item.recipientAddress : undefined)
           : item.mobile || item.mobileNumber || item.phone || item.recipientAddress;
       if (!address) continue;
       out.push({
@@ -165,14 +175,14 @@ const normalizeRecipients = async (inputs: RecipientInput[], channel: CampaignCh
     if (typeof item === "string" && isObjectId(item)) {
       const lead = await Lead.findById(item).lean();
       if (lead) {
-        const address = channel === "gmail" ? lead.email : lead.mobile;
+        const address = sendsEmail(channel) ? lead.email : lead.mobile;
         if (address) {
           out.push({ name: lead.name, recipientAddress: address, recipientType: "Lead", leadId: item, userId: null, status: "pending", segmentsCount: 1 });
         }
         continue;
       }
       const user = await User.findById(item).lean();
-      const address = user ? (channel === "gmail" ? user.email : user.mobile) : "";
+      const address = user ? (sendsEmail(channel) ? user.email : user.mobile) : "";
       if (user && address) {
         out.push({ name: user.fullname || "Customer", recipientAddress: address, recipientType: "Customer", leadId: null, userId: item, status: "pending", segmentsCount: 1 });
       }
@@ -213,7 +223,7 @@ export const createCampaign = async (data: CampaignBody, createdBy?: string) => 
     bannerIncluded: banner !== undefined ? toBool(banner) : templateType === "promotion",
     bannerType: str(data.bannerType) || "special_offer",
     bannerImageUrl: str(data.bannerImageUrl),
-    buttonLabel: str(data.buttonLabel) || (channel === "gmail" ? "Shop now" : ""),
+    buttonLabel: str(data.buttonLabel) || (sendsEmail(channel) ? "Shop now" : ""),
     buttonType: data.buttonType ? oneOf(data.buttonType, BUTTON_TYPES, "buttonType") : "none",
     buttonUrl: str(data.buttonUrl) || shortUrl,
     shortUrl: shortUrl || DEFAULT_SHORT_URL,
@@ -225,6 +235,11 @@ export const createCampaign = async (data: CampaignBody, createdBy?: string) => 
       messagingServiceSid: str(data.messagingServiceSid),
       statusCallbackUrl: str(data.statusCallbackUrl),
     },
+    whatsappTemplate: {
+      name: str(data.whatsappTemplateName),
+      language: str(data.whatsappTemplateLanguage) || ENV.WHATSAPP_TEMPLATE_LANGUAGE,
+      params: parseList(data.whatsappTemplateParams),
+    },
     recipients,
     createdBy: createdBy ?? null,
   });
@@ -234,19 +249,50 @@ export const createCampaign = async (data: CampaignBody, createdBy?: string) => 
 };
 
 /* ================= SEND (existing campaignId, or create + send) ================= */
-const dispatch = async (campaign: CampaignDocument, to: string, body: string, subject: string): Promise<DispatchResult> => {
-  const callback = campaign.twilioConfig?.statusCallbackUrl || undefined;
-  if (campaign.channel === "sms") {
-    return sendSMS({ to, body, from: campaign.twilioConfig?.fromNumber || undefined, statusCallback: callback });
-  }
+/** Free-form WhatsApp text: *header*, body, link and footer (Cloud API text messages can't carry buttons). */
+const whatsappText = (campaign: CampaignDocument, body: string, context: TemplateContext): string =>
+  [
+    campaign.header ? `*${interpolateTemplate(campaign.header, context)}*` : "",
+    body,
+    campaign.buttonUrl ? `${campaign.buttonLabel || "Open"}: ${campaign.buttonUrl}` : "",
+    campaign.footer ? `_${campaign.footer}_` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+const dispatch = async (
+  campaign: CampaignDocument,
+  to: string,
+  body: string,
+  subject: string,
+  context: TemplateContext
+): Promise<DispatchResult> => {
   if (campaign.channel === "whatsapp") {
-    return sendWhatsApp({
+    if (!isWhatsAppCloudConfigured()) {
+      return {
+        sid: null,
+        status: "failed",
+        segmentsCount: 1,
+        errorMessage: "WhatsApp is not configured. Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in env/dev.env.",
+        errorCode: "WHATSAPP_NOT_CONFIGURED",
+      };
+    }
+    // Meta WhatsApp Cloud API: approved template if one is set, otherwise free-form text/image
+    const templateName = campaign.whatsappTemplate?.name || ENV.WHATSAPP_DEFAULT_TEMPLATE;
+    return sendWhatsAppCloud({
       to,
-      body,
-      mediaUrl: campaign.bannerIncluded ? campaign.bannerImageUrl || undefined : undefined,
-      statusCallback: callback,
+      body: whatsappText(campaign, body, context),
+      imageUrl: campaign.bannerIncluded ? campaign.bannerImageUrl || undefined : undefined,
+      template: templateName
+        ? {
+            name: templateName,
+            language: campaign.whatsappTemplate?.language || ENV.WHATSAPP_TEMPLATE_LANGUAGE,
+            bodyParams: (campaign.whatsappTemplate?.params ?? []).map((p) => interpolateTemplate(p, context)),
+          }
+        : undefined,
     });
   }
+  // "sms" and "gmail" campaigns are both delivered as email through Nodemailer (SMTP)
   return sendEmail({
     to,
     subject,
@@ -265,6 +311,8 @@ const dispatch = async (campaign: CampaignDocument, to: string, body: string, su
 };
 
 export const sendCampaign = async (data: CampaignBody, createdBy?: string) => {
+
+  console.log(data.recipients)
   const campaign = data.campaignId
     ? await findCampaign(data.campaignId)
     : await createCampaign({ ...data, status: "in_progress" }, createdBy);
@@ -278,7 +326,6 @@ export const sendCampaign = async (data: CampaignBody, createdBy?: string) => {
 
   campaign.status = "in_progress";
   logger.info(`CAMPAIGN_SEND_STARTED: ${campaign.name} (${campaign.id}) to ${campaign.recipients.length} recipients`);
-
   await Promise.all(
     campaign.recipients.map(async (recipient) => {
       const context = {
@@ -290,7 +337,7 @@ export const sendCampaign = async (data: CampaignBody, createdBy?: string) => {
       const body = interpolateTemplate(campaign.body, context);
       const subject = interpolateTemplate(campaign.subject || `Special Offer from ${ENV.SENDER_NAME}`, context);
 
-      const result = await dispatch(campaign, recipient.recipientAddress, body, subject);
+      const result = await dispatch(campaign, recipient.recipientAddress, body, subject, context);
       recipient.twilioMessageSid = result.sid ?? "";
       recipient.status = result.status === "failed" ? "failed" : "sent";
       recipient.sentAt = new Date();
@@ -380,6 +427,13 @@ export const updateCampaign = async (identifier: string, data: CampaignBody) => 
 
   const fromEmail = data.fromEmail ?? data.senderEmailAddress;
   if (fromEmail !== undefined) campaign.set("twilioConfig.fromEmail", str(fromEmail));
+  if (data.whatsappTemplateName !== undefined) campaign.set("whatsappTemplate.name", str(data.whatsappTemplateName));
+  if (data.whatsappTemplateLanguage !== undefined) {
+    campaign.set("whatsappTemplate.language", str(data.whatsappTemplateLanguage));
+  }
+  if (data.whatsappTemplateParams !== undefined) {
+    campaign.set("whatsappTemplate.params", parseList(data.whatsappTemplateParams));
+  }
 
   if (Array.isArray(data.recipients)) {
     campaign.set("recipients", await normalizeRecipients(data.recipients, campaign.channel));
