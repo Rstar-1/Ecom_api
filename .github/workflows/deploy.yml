@@ -1,4 +1,5 @@
-name: Deploy Node.js App to AWS EC2
+
+name: Deploy Ecom API to AWS EC2
 
 on:
   push:
@@ -11,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: node-ec2-deployment
+  group: ecom-api-deployment
   cancel-in-progress: true
 
 jobs:
@@ -49,13 +50,33 @@ jobs:
         run: npm test --if-present
 
       # ==========================================
-      # 5. BUILD TYPESCRIPT APPLICATION
+      # 5. BUILD TYPESCRIPT
       # ==========================================
       - name: Build application
         run: npm run build
 
       # ==========================================
-      # 6. PREPARE EC2 DIRECTORY PERMISSIONS
+      # 6. VERIFY BUILD
+      # ==========================================
+      - name: Verify build output
+        run: |
+          if [ ! -f dist/server.js ]; then
+            echo "ERROR: dist/server.js not found"
+            exit 1
+          fi
+
+          echo "Build verified successfully"
+
+      # ==========================================
+      # 7. CREATE DEPLOYMENT VERSION
+      # ==========================================
+      - name: Create deployment version
+        run: |
+          echo "${GITHUB_SHA}" > deployment-version.txt
+          echo "Deploying commit: ${GITHUB_SHA}"
+
+      # ==========================================
+      # 8. PREPARE EC2 DIRECTORY
       # ==========================================
       - name: Prepare EC2 deployment directory
         uses: appleboy/ssh-action@v1.2.0
@@ -67,20 +88,18 @@ jobs:
           script: |
             set -e
 
-            echo "Preparing application directory..."
-
             sudo mkdir -p /var/www/Ecom_api
 
             sudo chown -R "$(id -un):$(id -gn)" /var/www/Ecom_api
 
             sudo chmod 755 /var/www/Ecom_api
 
-            echo "Directory permissions configured successfully"
+            echo "EC2 directory ready"
 
       # ==========================================
-      # 7. DEPLOY FILES TO EC2 USING RSYNC
+      # 9. COPY FILES TO EC2
       # ==========================================
-      - name: Copy application to EC2
+      - name: Deploy files to EC2
         uses: burnett01/rsync-deployments@v8
         with:
           switches: >-
@@ -100,10 +119,11 @@ jobs:
           remote_port: 22
 
       # ==========================================
-      # 8. INSTALL PRODUCTION DEPENDENCIES
+      # 10. INSTALL DEPENDENCIES
       # ==========================================
-      # 9. START OR RESTART PM2
-      # 10. VALIDATE AND RELOAD NGINX
+      # 11. RECREATE PM2 PROCESS
+      # 12. VERIFY API
+      # 13. RELOAD NGINX
       # ==========================================
       - name: Install and restart application
         uses: appleboy/ssh-action@v1.2.0
@@ -115,16 +135,25 @@ jobs:
           script: |
             set -e
 
+            APP_DIR="/var/www/Ecom_api"
+            APP_NAME="Ecom_api"
+            APP_PORT="5000"
+
             echo "=================================="
-            echo "Starting deployment"
+            echo "Starting EC2 deployment"
             echo "=================================="
 
-            cd /var/www/Ecom_api
+            cd "$APP_DIR"
 
-            # Install production dependencies
-            echo "Installing production dependencies..."
+            # Check deployment version
+            echo "Checking deployed commit..."
 
-            npm ci --omit=dev
+            if [ ! -f deployment-version.txt ]; then
+              echo "ERROR: Deployment version file missing"
+              exit 1
+            fi
+
+            cat deployment-version.txt
 
             # Verify build output
             if [ ! -f dist/server.js ]; then
@@ -132,22 +161,66 @@ jobs:
               exit 1
             fi
 
-            # Start or restart PM2 application
+            # Install production dependencies
+            echo "Installing production dependencies..."
+
+            npm ci --omit=dev
+
+            # Verify production dependencies
+            if [ ! -d node_modules ]; then
+              echo "ERROR: node_modules installation failed"
+              exit 1
+            fi
+
+            # Recreate PM2 process to guarantee correct cwd
             echo "Restarting PM2 application..."
 
-            if pm2 describe ecom-api > /dev/null 2>&1; then
-              pm2 restart ecom-api --update-env
-            else
-              pm2 start npm --name ecom-api -- start
+            pm2 delete "$APP_NAME" || true
+
+            cd "$APP_DIR"
+
+            pm2 start npm \
+              --name "$APP_NAME" \
+              --cwd "$APP_DIR" \
+              -- start
+
+            # Wait for application to start
+            echo "Waiting for API..."
+
+            API_READY=0
+
+            for i in $(seq 1 30); do
+              if curl --fail --silent \
+                "http://127.0.0.1:${APP_PORT}/" > /dev/null; then
+                API_READY=1
+                break
+              fi
+
+              echo "Waiting for API... attempt $i/30"
+              sleep 2
+            done
+
+            if [ "$API_READY" -ne 1 ]; then
+              echo "ERROR: API health check failed"
+
+              pm2 logs "$APP_NAME" --lines 50 --nostream
+
+              exit 1
             fi
+
+            echo "API is responding successfully"
 
             # Save PM2 process list
             pm2 save
 
             # Check PM2 status
-            echo "Checking PM2 status..."
-
             pm2 status
+
+            # Verify PM2 process
+            if ! pm2 describe "$APP_NAME" > /dev/null 2>&1; then
+              echo "ERROR: PM2 application not found"
+              exit 1
+            fi
 
             # Validate Nginx configuration
             echo "Testing Nginx configuration..."
@@ -159,25 +232,51 @@ jobs:
 
             sudo systemctl reload nginx
 
+            # Verify Nginx proxy
+            echo "Testing Nginx proxy..."
+
+            curl --fail --silent --show-error \
+              http://127.0.0.1/ > /dev/null
+
+            # Display deployed version
             echo "=================================="
-            echo "Deployment completed successfully"
+            echo "DEPLOYMENT SUCCESSFUL"
             echo "=================================="
 
+            echo "Application: $APP_NAME"
+            echo "Directory: $APP_DIR"
+            echo "Port: $APP_PORT"
+            echo "Deployed commit: $(cat deployment-version.txt)"
+
+            pm2 status
+
       # ==========================================
-      # 11. DEPLOYMENT SUMMARY
+      # 14. SUCCESS SUMMARY
       # ==========================================
       - name: Deployment successful
         if: success()
         run: |
-          echo "Node.js application deployed successfully!"
+          echo "=================================="
+          echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
+          echo "=================================="
           echo "Branch: development"
           echo "Server: AWS EC2"
-          echo "Application: ecom-api"
+          echo "Application: Ecom_api"
+          echo "Directory: /var/www/Ecom_api"
           echo "PM2: Running"
+          echo "Port: 5000"
           echo "Nginx: Reloaded"
+          echo "Commit: ${GITHUB_SHA}"
 
+      # ==========================================
+      # 15. FAILURE SUMMARY
+      # ==========================================
       - name: Deployment failed
         if: failure()
         run: |
-          echo "Deployment failed!"
-          echo "Please check the failed step in GitHub Actions."
+          echo "=================================="
+          echo "DEPLOYMENT FAILED"
+          echo "=================================="
+          echo "Branch: development"
+          echo "Commit: ${GITHUB_SHA}"
+          echo "Please inspect the failed GitHub Actions step."
