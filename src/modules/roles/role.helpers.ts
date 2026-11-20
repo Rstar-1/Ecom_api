@@ -1,3 +1,4 @@
+import { ENV } from "../../config/env";
 import { roles } from "../../constants";
 import { Role, type RoleDocument, type UserDocument } from "../../models";
 import { AppError, isObjectId, str } from "../../utils";
@@ -28,14 +29,22 @@ export const resolveRole = async (
     const name = str(rolename || role).toLowerCase();
     if (name) roleDoc = await Role.findOne({ rolename: name, isDeleted: false });
   }
-  if (roleDoc && allowedNames && !allowedNames.includes(roleDoc.rolename)) {
+  // In development, allow testing with any role without restriction
+  if (ENV.NODE_ENV !== "development" && roleDoc && allowedNames && !allowedNames.includes(roleDoc.rolename)) {
     throw AppError.forbidden(`Role "${roleDoc.rolename}" cannot be chosen at sign-up`);
   }
   if (!roleDoc) {
     roleDoc = await Role.findOne({ rolename: roles.CUSTOMER, isDeleted: false });
   }
   if (!roleDoc) {
-    throw AppError.internal(`Default "${roles.CUSTOMER}" role is not configured. Create it in /api/roles first.`);
+    // Auto-create default customer role if missing so registration never fails
+    roleDoc = await Role.create({
+      rolename: roles.CUSTOMER,
+      permissions: ["dashboard", "view_dashboard"],
+      pages: ["Dashboard"],
+      isActive: true,
+      isDeleted: false,
+    });
   }
   return roleDoc;
 };

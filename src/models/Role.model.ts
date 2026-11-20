@@ -5,6 +5,7 @@ const roleSchema = new Schema(
   {
     id: { type: String, required: true, unique: true, trim: true }, // ROLE-001
     rolename: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    name: { type: String, trim: true, lowercase: true },
     permissions: { type: [String], default: [] },
     pages: { type: [String], default: [] },
     count: { type: Number, default: 0, min: 0 },
@@ -13,6 +14,11 @@ const roleSchema = new Schema(
   },
   { timestamps: true, versionKey: "__v" }
 );
+
+roleSchema.pre("validate", function () {
+  if (this.rolename && !this.name) this.name = this.rolename;
+  if (this.name && !this.rolename) this.rolename = this.name;
+});
 
 applySequentialId(roleSchema, "ROLE", "roles");
 
