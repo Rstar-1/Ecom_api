@@ -70,7 +70,7 @@ jobs:
           script: |
             set -e
 
-            cd /var/www/Ecom_api
+            cd /var/www/Ecom_api/
 
             npm ci --omit=dev
 
