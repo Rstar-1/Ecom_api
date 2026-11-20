@@ -1,6 +1,8 @@
 import { Router } from "express";
-import { authMiddleware, checkPermission } from "../../middlewares";
+import { PERMISSIONS } from "../../constants";
+import { authMiddleware, checkPermission, upload } from "../../middlewares";
 import {
+  bulkDeleteCategories,
   createCategory,
   deleteCategory,
   getCategories,
@@ -11,9 +13,13 @@ import {
 const router = Router();
 
 router.get("/", getCategories);
+router.post("/", authMiddleware, checkPermission(PERMISSIONS.CATEGORY_CREATE), upload.single("image"), createCategory);
+
+router.post("/bulk-delete", authMiddleware, checkPermission(PERMISSIONS.CATEGORY_DELETE), bulkDeleteCategories);
+router.delete("/bulk-delete", authMiddleware, checkPermission(PERMISSIONS.CATEGORY_DELETE), bulkDeleteCategories);
+
 router.get("/:id", getCategoryById);
-router.post("/", authMiddleware, checkPermission("CATEGORY_CREATE"), createCategory);
-router.put("/:id", authMiddleware, checkPermission("CATEGORY_UPDATE"), updateCategory);
-router.delete("/:id", authMiddleware, checkPermission("CATEGORY_DELETE"), deleteCategory);
+router.put("/:id", authMiddleware, checkPermission(PERMISSIONS.CATEGORY_UPDATE), upload.single("image"), updateCategory);
+router.delete("/:id", authMiddleware, checkPermission(PERMISSIONS.CATEGORY_DELETE), deleteCategory);
 
 export default router;

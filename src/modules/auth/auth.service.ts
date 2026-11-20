@@ -1,32 +1,21 @@
 import bcrypt from "bcryptjs";
 import { ENV } from "../../config/env";
-import { messages, roles } from "../../constants";
-import { Role, User, type ShopDetails, type UserDocument, type UserDocuments } from "../../models";
-import { AppError, jwt, parseAddress, parseJsonObject, validateRole } from "../../utils";
-import type { LoginBody, RegisterBody, VerifyOtpBody } from "./auth.types";
+import { messages, PERMISSIONS } from "../../constants";
+import { hasPermission } from "../../middlewares";
+import { Otp, Role, User } from "../../models";
+import type { AuthUser } from "../../types/express";
+import { AppError, jwt, parseAddress, str, toBool } from "../../utils";
+import { PUBLIC_SIGNUP_ROLES, resolveRole, userWithRole } from "../roles/role.helpers";
+import type { ContactBody, LoginBody, RegisterBody, ResetPasswordBody, VerifyOtpBody } from "./auth.types";
 import { generateAndSendOtp, verifyOtp } from "./otp.service";
 
-export interface RegisterResult {
-  message: string;
-  mobile?: string | null;
-  email?: string | null;
-  contact?: string | null;
-}
+const normalizeContact = ({ email, mobile }: ContactBody) => ({
+  email: email ? str(email).toLowerCase() : undefined,
+  mobile: mobile ? str(mobile) : undefined,
+});
 
-export interface VerifyResult {
-  message: string;
-  user: UserDocument;
-}
-
-export interface LoginResult {
-  user: UserDocument;
-  token: string;
-}
-
-const isEmptyObject = (obj: object | null): boolean => !!obj && Object.values(obj).every((v) => !v);
-
-/** Builds an `$or` filter from whichever identifiers were provided. */
-const contactFilter = (email?: string, mobile?: string) => {
+/** `$or` filter from whichever identifiers were provided. */
+const contactOr = ({ email, mobile }: ContactBody) => {
   const or: Array<{ email: string } | { mobile: string }> = [];
   if (email) or.push({ email });
   if (mobile) or.push({ mobile });
@@ -34,84 +23,91 @@ const contactFilter = (email?: string, mobile?: string) => {
 };
 
 /* ================= REGISTER ================= */
-export const registerUser = async (data: RegisterBody): Promise<RegisterResult> => {
-  const email = data.email?.toLowerCase().trim();
-  const mobile = data.mobile?.trim();
-  console.log(data,"datadatadatadata")
-
-  if (!email && !mobile) throw AppError.badRequest("Email or mobile is required");
+/**
+ * Public sign-up: customer/vendor role only, OTP verification required.
+ * An authenticated admin (or USER_CREATE permission) may pick any role and
+ * pre-verify / activate the account (dashboard "Add user").
+ */
+export const registerUser = async (data: RegisterBody, requester?: AuthUser) => {
+  const { email, mobile } = normalizeContact(data);
+  if (!email || !mobile) throw AppError.badRequest("Email and mobile are required");
   if (!data.password) throw AppError.badRequest("Password is required");
-  if (!data.fullname?.trim()) throw AppError.badRequest("Full name is required");
+  if (!str(data.fullname)) throw AppError.badRequest("Full name is required");
 
-  const exists = await User.exists({ $or: contactFilter(email, mobile) });
-  if (exists) throw AppError.conflict("User already exists");
+  const exists = await User.exists({ $or: [{ email }, { mobile }], isDeleted: false });
+  if (exists) throw AppError.conflict("User already exists with this email or mobile");
 
-//   const role = data.role ? await validateRole(data.role) : roles.USER;
-// console.log(role,"rolerole")
-  let shopDetails = parseJsonObject<ShopDetails>(data.shopDetails);
-  let documents = parseJsonObject<UserDocuments>(data.documents);
-  if (isEmptyObject(shopDetails)) shopDetails = null;
-  if (isEmptyObject(documents)) documents = null;
+  const privileged = !!requester && hasPermission(requester, [PERMISSIONS.USER_CREATE]);
+  const roleDoc = await resolveRole(data, privileged ? undefined : PUBLIC_SIGNUP_ROLES);
+  const isOtpVerified = privileged && data.isOtpVerified !== undefined ? toBool(data.isOtpVerified) : false;
 
   const user = await User.create({
-    fullname: data.fullname.trim(),
-    email: email || undefined,
-    mobile: mobile || undefined,
+    ...(privileged && str(data.id) ? { id: str(data.id) } : {}),
+    fullname: str(data.fullname),
+    email,
+    mobile,
     password: data.password,
-    role:data.role, 
-    status: false,
-    isOtpVerified: false,
+    roleId: roleDoc._id,
+    isActive: privileged && data.isActive !== undefined ? toBool(data.isActive) : true,
+    isOtpVerified,
     image: data.image ?? "",
     address: parseAddress(data.address),
-    shopDetails,
-    documents,
+    documents: data.documents ?? null,
   });
 
-  await generateAndSendOtp({ mobile: user.mobile, email: user.email, purpose: "REGISTER" });
+  await Role.updateOne({ _id: roleDoc._id }, { $inc: { count: 1 } });
+
+  if (!isOtpVerified) {
+    await generateAndSendOtp({ mobile: user.mobile, email: user.email, purpose: "REGISTER" });
+    return {
+      message: "OTP sent successfully",
+      id: user.id,
+      mobile: user.mobile,
+      email: user.email,
+      contact: user.mobile || user.email,
+    };
+  }
 
   return {
-    message: "OTP sent successfully",
+    message: "User registered successfully",
+    id: user.id,
     mobile: user.mobile,
     email: user.email,
-    contact: user.mobile ?? user.email,
+    user: userWithRole(user, roleDoc),
   };
 };
 
-/* ================= VERIFY OTP ================= */
-export const verifyRegisterOtp = async ({ mobile, email, otp }: VerifyOtpBody): Promise<VerifyResult> => {
-  if (!otp) throw AppError.badRequest("OTP is required");
+/* ================= VERIFY REGISTER OTP ================= */
+export const verifyRegisterOtp = async (body: VerifyOtpBody) => {
+  if (!body.otp) throw AppError.badRequest("OTP is required");
+  const { email, mobile } = normalizeContact(body);
 
-  await verifyOtp({ mobile, email, otp });
+  await verifyOtp({ mobile, email, otp: body.otp });
 
   const user = await User.findOneAndUpdate(
-    {
-      isDeleted: false,
-      ...(mobile ? { mobile } : {}),
-      ...(email ? { email: email.toLowerCase().trim() } : {}),
-    },
-    { isOtpVerified: true, status: true },
+    { isDeleted: false, ...(mobile ? { mobile } : {}), ...(email ? { email } : {}) },
+    { isOtpVerified: true, isActive: true },
     { new: true }
   );
-
   if (!user) throw AppError.notFound(messages.USER_NOT_FOUND);
 
-  return { message: "User verified successfully", user };
+  const roleDoc = await Role.findById(user.roleId);
+  return { message: "User verified successfully", user: userWithRole(user, roleDoc) };
 };
 
 /* ================= LOGIN ================= */
-export const loginUser = async ({ email, mobile, password }: LoginBody): Promise<LoginResult> => {
-  if (!password) throw AppError.badRequest("Password required");
+export const loginUser = async (body: LoginBody) => {
+  if (!body.password) throw AppError.badRequest("Password required");
 
-  const or = contactFilter(email?.toLowerCase().trim(), mobile?.trim());
+  const or = contactOr(normalizeContact(body));
   if (or.length === 0) throw AppError.badRequest("Email or mobile is required");
 
   const user = await User.findOne({ isDeleted: false, $or: or }).select("+password");
-
   if (!user) throw AppError.notFound(messages.USER_NOT_FOUND);
-  if (!user.status) throw AppError.forbidden("Inactive user");
+  if (!user.isActive) throw AppError.forbidden("Inactive user");
   if (!user.isOtpVerified) throw AppError.forbidden("Verify OTP first");
 
-  const match = await bcrypt.compare(password, user.password ?? "");
+  const match = await bcrypt.compare(body.password, user.password);
   if (!match) {
     user.loginAttempts = (user.loginAttempts ?? 0) + 1;
     await user.save();
@@ -122,21 +118,76 @@ export const loginUser = async ({ email, mobile, password }: LoginBody): Promise
   user.lastLogin = new Date();
   await user.save();
 
-  const roleDoc = await Role.findOne({ name: user.role }).lean();
+  const roleDoc = await Role.findById(user.roleId);
+  const summary = userWithRole(user, roleDoc);
 
   const token = jwt.generateToken(
     {
       id: user._id.toString(),
-      ...(user.email ? { email: user.email } : {}),
-      role: user.role,
-      permissions: roleDoc?.permissions ?? [],
+      userId: user.id,
+      email: user.email,
+      role: summary.role,
+      roleId: user.roleId.toString(),
+      permissions: summary.permissions,
     },
     ENV.JWT_SECRET,
     ENV.JWT_EXPIRES_IN
   );
 
-  return { user, token };
+  return { user: summary, token };
 };
 
 /* ================= LOGOUT ================= */
-export const logoutUser = async (): Promise<{ message: string }> => ({ message: "Logout successful" });
+export const logoutUser = async () => ({ message: "Logout successful" });
+
+/* ================= FORGOT PASSWORD ================= */
+export const forgotPassword = async (body: ContactBody) => {
+  const or = contactOr(normalizeContact(body));
+  if (or.length === 0) throw AppError.badRequest("Email or mobile is required");
+
+  const user = await User.findOne({ isDeleted: false, $or: or });
+  if (!user) throw AppError.notFound(messages.USER_NOT_FOUND);
+
+  await generateAndSendOtp({ mobile: user.mobile, email: user.email, purpose: "FORGOT_PASSWORD" });
+
+  return {
+    message: "OTP sent successfully",
+    mobile: user.mobile,
+    email: user.email,
+    contact: user.mobile || user.email,
+  };
+};
+
+/* ================= VERIFY FORGOT PASSWORD OTP ================= */
+export const verifyForgotPasswordOtp = async (body: VerifyOtpBody) => {
+  if (!body.otp) throw AppError.badRequest("OTP is required");
+  const { email, mobile } = normalizeContact(body);
+  await verifyOtp({ mobile, email, otp: body.otp, purpose: "FORGOT_PASSWORD" });
+  return { message: "OTP verified successfully" };
+};
+
+/* ================= RESET PASSWORD ================= */
+export const resetPassword = async (body: ResetPasswordBody) => {
+  if (!body.password) throw AppError.badRequest("New password is required");
+  const { email, mobile } = normalizeContact(body);
+  if (!email && !mobile) throw AppError.badRequest("Email or mobile is required");
+
+  const contact = { ...(mobile ? { mobile } : {}), ...(email ? { email } : {}) };
+
+  const otpRecord = await Otp.findOne({
+    purpose: "FORGOT_PASSWORD",
+    isVerified: true,
+    expiresAt: { $gt: new Date() },
+    ...contact,
+  });
+  if (!otpRecord) throw AppError.badRequest("OTP verification required or OTP expired");
+
+  const user = await User.findOne({ isDeleted: false, ...contact });
+  if (!user) throw AppError.notFound(messages.USER_NOT_FOUND);
+
+  user.password = body.password; // hashed by pre-save hook
+  await user.save();
+  await Otp.deleteOne({ _id: otpRecord._id });
+
+  return { message: "Password reset successfully" };
+};

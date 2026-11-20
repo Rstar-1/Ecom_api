@@ -1,17 +1,15 @@
-export interface CategoryAttribute {
-  name?: string;
-  type?: string;
-  options?: string[];
-}
+import type { ListQuery } from "../../utils";
 
 export interface CategoryBody {
+  id?: string;
+  categoryName?: string;
   name?: string;
-  slug?: string;
-  parentId?: string | null;
-  attributes?: CategoryAttribute[];
-  isActive?: boolean;
+  description?: string;
+  image?: string;
+  iconName?: string;
+  count?: number | string;
+  isActive?: boolean | string;
+  isDeleted?: boolean | string;
 }
 
-export interface CategoryListQuery {
-  parentId?: string;
-}
+export type CategoryListQuery = ListQuery;

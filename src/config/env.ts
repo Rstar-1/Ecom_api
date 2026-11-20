@@ -38,6 +38,18 @@ export interface Env {
   readonly RATE_LIMIT_MAX: number;
   readonly RAZORPAY_KEY_ID: string | undefined;
   readonly RAZORPAY_KEY_SECRET: string | undefined;
+  readonly TWILIO_ACCOUNT_SID: string | undefined;
+  readonly TWILIO_AUTH_TOKEN: string | undefined;
+  readonly TWILIO_PHONE_NUMBER: string | undefined;
+  readonly TWILIO_WHATSAPP_NUMBER: string;
+  readonly TWILIO_STATUS_CALLBACK_URL: string | undefined;
+  readonly SMTP_HOST: string;
+  readonly SMTP_PORT: number;
+  readonly SMTP_SECURE: boolean;
+  readonly SMTP_USER: string | undefined;
+  readonly SMTP_PASS: string | undefined;
+  readonly SENDER_EMAIL: string;
+  readonly SENDER_NAME: string;
 }
 
 export const ENV: Env = Object.freeze({
@@ -53,4 +65,16 @@ export const ENV: Env = Object.freeze({
   RATE_LIMIT_MAX: toNumber("RATE_LIMIT_MAX", 100),
   RAZORPAY_KEY_ID: optional("RAZORPAY_KEY_ID"),
   RAZORPAY_KEY_SECRET: optional("RAZORPAY_KEY_SECRET"),
+  TWILIO_ACCOUNT_SID: optional("TWILIO_ACCOUNT_SID"),
+  TWILIO_AUTH_TOKEN: optional("TWILIO_AUTH_TOKEN"),
+  TWILIO_PHONE_NUMBER: optional("TWILIO_PHONE_NUMBER"),
+  TWILIO_WHATSAPP_NUMBER: optional("TWILIO_WHATSAPP_NUMBER") ?? "whatsapp:+14155238886",
+  TWILIO_STATUS_CALLBACK_URL: optional("TWILIO_STATUS_CALLBACK_URL"),
+  SMTP_HOST: optional("SMTP_HOST") ?? "smtp.gmail.com",
+  SMTP_PORT: toNumber("SMTP_PORT", 587),
+  SMTP_SECURE: process.env.SMTP_SECURE === "true" || process.env.SMTP_PORT === "465",
+  SMTP_USER: optional("SMTP_USER"),
+  SMTP_PASS: optional("SMTP_PASS")?.replace(/\s+/g, ""),
+  SENDER_EMAIL: optional("SENDER_EMAIL") ?? optional("SMTP_USER") ?? "offers@yourbrand.in",
+  SENDER_NAME: optional("SENDER_NAME") ?? "Company",
 });

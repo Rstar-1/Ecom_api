@@ -3,12 +3,17 @@ import mongoose from "mongoose";
 import { ENV } from "./config/env";
 import { connectDB } from "./config/db";
 import app from "./app";
+import { seedInitialSeo } from "./modules/seo/seo.service";
 
 let server: Server | undefined;
 
 const start = async (): Promise<void> => {
   try {
     await connectDB();
+    // Populate the 12 default page SEO records when the collection is empty
+    await seedInitialSeo().catch((error: unknown) =>
+      console.warn("⚠️ SEO seed skipped:", error instanceof Error ? error.message : error)
+    );
     server = app.listen(ENV.PORT, () => {
       console.log(`🚀 Ecom API running on port ${ENV.PORT} [${ENV.NODE_ENV}]`);
     });

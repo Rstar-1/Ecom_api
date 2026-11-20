@@ -1,11 +1,10 @@
-import type { ShopDetails, UserDocuments } from "../../models";
+import type { ListQuery } from "../../utils";
 
-export interface UserListQuery {
+export interface UserListQuery extends ListQuery {
+  /** Filter by role: Mongo _id, ROLE-001 or role name ("all" = no filter) */
+  roleId?: string;
   role?: string;
-  status?: string;
-  search?: string;
-  page?: string;
-  limit?: string;
+  rolename?: string;
 }
 
 export interface UpdateUserBody {
@@ -13,11 +12,15 @@ export interface UpdateUserBody {
   email?: string;
   mobile?: string;
   image?: string;
-  role?: string;
   password?: string;
   address?: unknown;
-  shopDetails?: Partial<ShopDetails>;
-  documents?: Partial<UserDocuments>;
+  documents?: Record<string, string | undefined> | null;
+  roleId?: string;
+  rolename?: string;
+  role?: string;
+  isActive?: boolean | string;
+  isOtpVerified?: boolean | string;
+  isDeleted?: boolean | string;
 }
 
 export type DocumentField = "gstCertificate" | "panCard" | "shopPhoto";

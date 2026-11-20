@@ -1,57 +1,168 @@
-import type { QueryFilter } from "mongoose";
-import { Category, type ICategory } from "../../models";
-import type { AuthUser } from "../../types/express";
-import { AppError } from "../../utils";
+import { Product, ProductCategory } from "../../models";
+import {
+  AppError,
+  baseListFilter,
+  bulkFilter,
+  exactCi,
+  identifierFilter,
+  isPermanent,
+  logger,
+  pagedResult,
+  readBulkIds,
+  readPagination,
+  searchFilter,
+  str,
+  toBool,
+  toNumber,
+} from "../../utils";
+import { CREATOR_POPULATE } from "../roles/role.helpers";
 import type { CategoryBody, CategoryListQuery } from "./category.types";
 
-/** Only these fields may be set by clients (createdBy / isDeleted are server-controlled). */
-const pickCategoryFields = (data: CategoryBody): CategoryBody => {
-  const { name, slug, parentId, attributes, isActive } = data;
-  return Object.fromEntries(
-    Object.entries({ name, slug, parentId, attributes, isActive }).filter(([, v]) => v !== undefined)
-  ) as CategoryBody;
+const categoryName = (data: CategoryBody) => str(data.categoryName || data.name);
+
+const findCategory = async (identifier: string) => {
+  const category = await ProductCategory.findOne(identifierFilter(identifier, (v) => [{ categoryName: exactCi(v) }]));
+  if (!category) throw AppError.notFound("Category not found");
+  return category;
 };
 
-export const createCategory = (data: CategoryBody, user: AuthUser) => {
-  if (!data.name?.trim()) throw AppError.badRequest("Category name is required");
-  if (!data.slug?.trim()) throw AppError.badRequest("Category slug is required");
-  if (!user.email) throw AppError.badRequest("Authenticated user has no email");
+/** Live number of non-deleted products per category. */
+const productCountsByCategory = async (): Promise<Map<string, number>> => {
+  const counts = await Product.aggregate<{ _id: unknown; count: number }>([
+    { $match: { isDeleted: false } },
+    { $group: { _id: "$categoryId", count: { $sum: 1 } } },
+  ]);
+  return new Map(counts.map((c) => [String(c._id), c.count]));
+};
 
-  return Category.create({
-    ...pickCategoryFields(data),
-    createdBy: user.id,
-    createdByEmail: user.email,
+/* ================= CREATE (restores a soft-deleted category with the same name) ================= */
+export const createCategory = async (data: CategoryBody, createdBy: string) => {
+  const name = categoryName(data);
+  if (!name) throw AppError.badRequest("Category name is required");
+
+  const existing = await ProductCategory.findOne({ categoryName: name });
+  if (existing) {
+    if (!existing.isDeleted) throw AppError.conflict(`Category "${name}" already exists`);
+    existing.isDeleted = false;
+    existing.isActive = data.isActive !== undefined ? toBool(data.isActive) : true;
+    if (data.description !== undefined) existing.description = str(data.description);
+    if (data.image !== undefined) existing.image = data.image;
+    if (data.iconName !== undefined) existing.iconName = str(data.iconName);
+    await existing.save();
+    logger.info(`CATEGORY_RESTORED_AND_UPDATED: ${existing.categoryName} (${existing.id})`);
+    return existing;
+  }
+
+  const id = str(data.id);
+  if (id && (await ProductCategory.exists({ id }))) throw AppError.conflict(`Category with ID ${id} already exists`);
+
+  const category = await ProductCategory.create({
+    ...(id ? { id } : {}),
+    categoryName: name,
+    description: str(data.description),
+    image: data.image ?? "",
+    iconName: str(data.iconName),
+    count: toNumber(data.count),
+    isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
+    createdBy,
   });
+  logger.info(`CATEGORY_CREATED: ${category.categoryName} (${category.id})`);
+  return category.populate("createdBy", CREATOR_POPULATE);
 };
 
-export const getCategories = (query: CategoryListQuery = {}) => {
-  const filter: QueryFilter<ICategory> = { isDeleted: false };
-  if (query.parentId) filter.parentId = query.parentId;
-  return Category.find(filter).sort({ name: 1 });
+/* ================= LIST ================= */
+export const getCategories = async (query: CategoryListQuery = {}) => {
+  const filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "categoryName", "description"]) };
+  const paging = readPagination(query, 10);
+  const countMap = await productCountsByCategory();
+
+  const base = ProductCategory.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
+  const [categories, total] = await Promise.all([
+    (paging.isPaginated ? base.skip(paging.skip).limit(paging.limit) : base).lean(),
+    paging.isPaginated ? ProductCategory.countDocuments(filter) : Promise.resolve(0),
+  ]);
+
+  const withCounts = categories.map((c) => ({ ...c, count: countMap.get(String(c._id)) ?? c.count ?? 0 }));
+  return paging.isPaginated ? pagedResult("categories", withCounts, total, paging) : withCounts;
 };
 
-export const getCategoryById = async (id: string) => {
-  const category = await Category.findOne({ _id: id, isDeleted: false });
-  if (!category) throw AppError.notFound("Category not found");
-  return category;
+/* ================= GET ONE (Mongo _id, PCAT-001 or name) ================= */
+export const getCategoryById = async (identifier: string) => {
+  const category = await findCategory(identifier);
+  await category.populate("createdBy", CREATOR_POPULATE);
+  const count = await Product.countDocuments({ categoryId: category._id, isDeleted: false });
+  return { ...category.toObject(), count };
 };
 
-export const updateCategory = async (id: string, data: CategoryBody) => {
-  const category = await Category.findOneAndUpdate(
-    { _id: id, isDeleted: false },
-    { $set: pickCategoryFields(data) },
-    { new: true, runValidators: true }
-  );
-  if (!category) throw AppError.notFound("Category not found");
-  return category;
+/* ================= UPDATE ================= */
+export const updateCategory = async (identifier: string, data: CategoryBody) => {
+  const category = await findCategory(identifier);
+
+  const name = categoryName(data);
+  if (name) {
+    if (await ProductCategory.exists({ categoryName: name, _id: { $ne: category._id }, isDeleted: false })) {
+      throw AppError.conflict(`Category "${name}" already exists`);
+    }
+    category.categoryName = name;
+  }
+
+  const newId = str(data.id);
+  if (newId && newId !== category.id) {
+    if (await ProductCategory.exists({ id: newId, _id: { $ne: category._id } })) {
+      throw AppError.conflict(`Category with ID ${newId} already exists`);
+    }
+    category.id = newId;
+  }
+
+  if (data.description !== undefined) category.description = str(data.description);
+  if (data.image !== undefined) category.image = data.image;
+  if (data.iconName !== undefined) category.iconName = str(data.iconName);
+  if (data.count !== undefined) category.count = Math.max(0, toNumber(data.count));
+  if (data.isActive !== undefined) category.isActive = toBool(data.isActive);
+  if (data.isDeleted !== undefined) category.isDeleted = toBool(data.isDeleted);
+
+  await category.save();
+  logger.info(`CATEGORY_UPDATED: ${category.categoryName} (${category.id})`);
+  return category.populate("createdBy", CREATOR_POPULATE);
 };
 
-export const deleteCategory = async (id: string): Promise<{ success: true }> => {
-  const category = await Category.findOneAndUpdate(
-    { _id: id, isDeleted: false },
-    { $set: { isDeleted: true } },
-    { new: true }
-  );
-  if (!category) throw AppError.notFound("Category not found");
-  return { success: true };
+/* ================= DELETE (soft first, permanent if already in trash) ================= */
+export const deleteCategory = async (identifier: string) => {
+  const category = await findCategory(identifier);
+
+  if (category.isDeleted) {
+    await ProductCategory.deleteOne({ _id: category._id });
+    logger.info(`CATEGORY_PERMANENTLY_DELETED: ${category.categoryName} (${category.id})`);
+    return { deleted: true, message: `Category ${category.categoryName} permanently removed` };
+  }
+
+  category.isDeleted = true;
+  await category.save();
+  logger.info(`CATEGORY_DELETED: ${category.categoryName} (${category.id})`);
+  return { deleted: true, message: `Category ${category.categoryName} deleted successfully` };
+};
+
+/* ================= BULK DELETE ================= */
+export const bulkDeleteCategories = async (body: unknown) => {
+  const ids = readBulkIds(body, "categoryIds");
+  const matched = await ProductCategory.find(bulkFilter(ids, ["categoryName"]));
+  if (matched.length === 0) throw AppError.notFound("No matching categories found");
+
+  if (isPermanent(body)) {
+    await ProductCategory.deleteMany({ _id: { $in: matched.map((c) => c._id) } });
+    return { deleted: true, totalCount: matched.length, message: `${matched.length} category(s) permanently deleted` };
+  }
+
+  const hardIds = matched.filter((c) => c.isDeleted).map((c) => c._id);
+  const softIds = matched.filter((c) => !c.isDeleted).map((c) => c._id);
+  if (hardIds.length) await ProductCategory.deleteMany({ _id: { $in: hardIds } });
+  if (softIds.length) await ProductCategory.updateMany({ _id: { $in: softIds } }, { $set: { isDeleted: true } });
+
+  return {
+    deleted: true,
+    totalCount: matched.length,
+    softDeletedCount: softIds.length,
+    permanentlyDeletedCount: hardIds.length,
+    message: `${matched.length} category(s) processed (${softIds.length} moved to trash, ${hardIds.length} permanently deleted)`,
+  };
 };

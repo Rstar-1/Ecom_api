@@ -1,5 +1,5 @@
-import { Cart } from "../../models";
-import { AppError } from "../../utils";
+import { Cart, Product } from "../../models";
+import { AppError, identifierFilter } from "../../utils";
 import type { AddToCartBody, CartVariant } from "./cart.types";
 
 export type CartDocument = Awaited<ReturnType<typeof getCartByUserId>>;
@@ -34,14 +34,20 @@ export const getCartByUserId = async (userId: string) => {
 };
 
 export const addItemToCart = async (userId: string, data: AddToCartBody) => {
-  const { productId, vendorId, name, image, variant } = data;
-  if (!productId) throw AppError.badRequest("productId is required");
-
-  const price = Number(data.price);
-  if (!Number.isFinite(price) || price < 0) throw AppError.badRequest("A valid price is required");
+  const { variant } = data;
+  if (!data.productId) throw AppError.badRequest("productId is required");
 
   const quantity = toQuantity(data.quantity, 1);
   if (quantity <= 0) throw AppError.badRequest("Quantity must be at least 1");
+
+  // Name, price and image always come from the product record, never from the client
+  const product = await Product.findOne({
+    ...identifierFilter(data.productId),
+    isDeleted: false,
+    isActive: true,
+  });
+  if (!product) throw AppError.notFound("Product not found or unavailable");
+  const productId = product._id.toString();
 
   const cart = await getCartByUserId(userId);
   const existing = cart.items.find((item) => isSameItem(item, productId, variant));
@@ -49,7 +55,15 @@ export const addItemToCart = async (userId: string, data: AddToCartBody) => {
   if (existing) {
     existing.quantity = (existing.quantity ?? 0) + quantity;
   } else {
-    cart.items.push({ productId, vendorId, name, image, price, quantity, variant });
+    cart.items.push({
+      productId: product._id,
+      vendorId: product.createdBy,
+      name: product.productName,
+      image: product.image || product.images[0] || "",
+      price: product.price,
+      quantity,
+      variant,
+    });
   }
 
   calculateTotals(cart);

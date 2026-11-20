@@ -1,7 +1,7 @@
 import { HTTP_STATUS } from "../../constants";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { successResponse } from "../../utils";
-import type { RoleBody } from "./role.types";
+import type { RoleBody, RoleListQuery } from "./role.types";
 import * as service from "./role.service";
 
 /* POST /api/roles */
@@ -14,17 +14,17 @@ export const createRole: ApiHandler<EmptyParams, RoleBody> = async (req, res, ne
   }
 };
 
-/* GET /api/roles */
-export const getRoles: ApiHandler = async (_req, res, next) => {
+/* GET /api/roles?page=&limit=&search=&isActive=&isDeleted= */
+export const getRoles: ApiHandler<EmptyParams, never, RoleListQuery> = async (req, res, next) => {
   try {
-    const data = await service.getRoles();
+    const data = await service.getRoles(req.query);
     successResponse(res, data, "Roles fetched");
   } catch (error) {
     next(error);
   }
 };
 
-/* GET /api/roles/:id */
+/* GET /api/roles/:id (Mongo _id, ROLE-001 or role name) */
 export const getRoleById: ApiHandler<IdParams> = async (req, res, next) => {
   try {
     const data = await service.getRoleById(req.params.id);
@@ -49,6 +49,16 @@ export const deleteRole: ApiHandler<IdParams> = async (req, res, next) => {
   try {
     const data = await service.deleteRole(req.params.id);
     successResponse(res, data, "Role deleted");
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* POST|DELETE /api/roles/bulk-delete { ids, permanent? } */
+export const bulkDeleteRoles: ApiHandler<EmptyParams, unknown> = async (req, res, next) => {
+  try {
+    const data = await service.bulkDeleteRoles(req.body);
+    successResponse(res, data, "Roles deleted successfully");
   } catch (error) {
     next(error);
   }

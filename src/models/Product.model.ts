@@ -1,36 +1,40 @@
 import { Schema, model, type InferSchemaType } from "mongoose";
+import { applySequentialId } from "../utils/crud";
+import { aliasVirtual, withVirtuals } from "./plugins";
+import { reviewSchema, specificationSchema } from "./Review.schema";
 
-const variantSchema = new Schema(
-  {
-    size: String,
-    color: String,
-    price: Number,
-    stock: Number,
-    sku: String,
-  },
-  { _id: false }
-);
+export const PRODUCT_SEVERITIES = ["pending", "approved", "rejected", "low", "medium", "high"] as const;
 
 const productSchema = new Schema(
   {
-    name: { type: String, required: true },
-    description: String,
-    categoryId: { type: Schema.Types.ObjectId, ref: "Category", required: true },
-    // Reference to User with role "vendor"
-    vendorId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    vendorEmail: { type: String, required: true, lowercase: true, trim: true },
-    images: [String],
-    basePrice: { type: Number, required: true },
-    attributes: { type: Map, of: Schema.Types.Mixed },
-    variants: [variantSchema],
-    totalStock: { type: Number, default: 0 },
-    status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+    id: { type: String, required: true, unique: true, trim: true }, // PROD-001
+    productName: { type: String, required: true, trim: true },
+    description: { type: String, default: "" },
+    shortDesc: { type: String, default: "", trim: true },
+    price: { type: Number, required: true, min: 0 },
+    unit: { type: String, default: "Pcs" },
+    currency: { type: String, default: "INR" },
+    totalStock: { type: Number, default: 0, min: 0 },
+    reservedStock: { type: Number, default: 0, min: 0 },
+    stockStatus: { type: Boolean, default: true },
+    isTrending: { type: Boolean, default: false },
+    severity: { type: String, enum: PRODUCT_SEVERITIES, default: "pending", lowercase: true, trim: true },
+    categoryId: { type: Schema.Types.ObjectId, ref: "ProductCategory", required: true },
+    image: { type: String, default: "" },
+    images: { type: [String], default: [] },
+    badges: { type: [String], default: [] },
+    specifications: { type: [specificationSchema], default: [] },
+    reviews: { type: [reviewSchema], default: [] },
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
-  { timestamps: true, versionKey: false }
+  withVirtuals
 );
 
-export type IProduct = InferSchemaType<typeof productSchema>;
+aliasVirtual(productSchema, "name", "productName");
+applySequentialId(productSchema, "PROD", "products");
 
-export const Product = model("Product", productSchema);
+export const Product = model("Product", productSchema, "products");
+
+export type IProduct = InferSchemaType<typeof productSchema>;

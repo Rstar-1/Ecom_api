@@ -1,19 +1,21 @@
-import { Role } from "../models";
-import { roles } from "../constants";
-import { AppError } from "./AppError";
-
-/** Accepts an array or a JSON string (multipart form fields) and always returns an array. */
-export const parseAddress = <T = unknown>(address: unknown): T[] => {
-  if (!address) return [];
+/** Normalises an address into the string[] shape used by the User model. */
+export const parseAddress = (address: unknown): string[] => {
+  if (!address) return ["", ""];
   if (typeof address === "string") {
     try {
       const parsed: unknown = JSON.parse(address);
-      return Array.isArray(parsed) ? (parsed as T[]) : [];
+      if (Array.isArray(parsed)) return parsed.map(String);
     } catch {
-      return [];
+      /* plain string */
     }
+    return [address, ""];
   }
-  return Array.isArray(address) ? (address as T[]) : [];
+  if (Array.isArray(address)) {
+    return address.map((a: unknown) =>
+      typeof a === "object" && a !== null ? Object.values(a).filter(Boolean).join(", ") : String(a)
+    );
+  }
+  return ["", ""];
 };
 
 /** Parses a value that may be a JSON string (multipart form fields) into an object. */
@@ -28,14 +30,6 @@ export const parseJsonObject = <T extends object>(value: unknown): T | null => {
     }
   }
   return typeof value === "object" ? (value as T) : null;
-};
-
-export const validateRole = async (role?: string): Promise<string> => {
-  if (!role) return roles.USER;
-  const exists = await Role.exists({ name: role, isDeleted: false, isActive: true });
-  console.log(exists,"existsexistsexists")
-  if (!exists) throw AppError.badRequest("Invalid role");
-  return role;
 };
 
 export const mergeObjects = <T extends object>(oldObj?: T | null, newObj?: Partial<T> | null): T =>

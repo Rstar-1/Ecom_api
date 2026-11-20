@@ -13,6 +13,6 @@ router.get("/:id", orderController.getOrder);
 router.put("/:id/cancel", orderController.cancelOrder);
 
 // Admin / Vendor
-router.put("/:id/status", authorizeRoles(roles.ADMIN, roles.VENDOR), orderController.updateStatus);
+router.put("/:id/status", authorizeRoles(roles.ADMIN, roles.MANAGER, roles.VENDOR), orderController.updateStatus);
 
 export default router;

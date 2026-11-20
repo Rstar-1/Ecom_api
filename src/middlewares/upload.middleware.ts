@@ -1,8 +1,9 @@
 import fs from "fs";
 import path from "path";
+import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 
-export const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+export const UPLOAD_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), "uploads");
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -28,3 +29,16 @@ export const upload = multer({
     cb(null, true);
   },
 });
+
+/** Public URL path for an uploaded file, e.g. "/uploads/1712-photo.png". */
+export const fileUrl = (file: Express.Multer.File | undefined): string | undefined =>
+  file ? (file.filename ? `/uploads/${file.filename}` : file.path) : undefined;
+
+/** Parses multipart text fields (no files) only when the request is multipart; JSON passes through. */
+export const handleFormData = (req: Request, res: Response, next: NextFunction): void => {
+  if (req.is("multipart/form-data")) {
+    upload.none()(req, res, (err: unknown) => next(err));
+    return;
+  }
+  next();
+};

@@ -6,11 +6,8 @@ export interface CartVariant {
 }
 
 export interface AddToCartBody {
+  /** Mongo _id or PROD-001; name/price/image are read from the product */
   productId?: string;
-  vendorId?: string;
-  name?: string;
-  image?: string;
-  price?: number;
   quantity?: number;
   variant?: CartVariant;
 }

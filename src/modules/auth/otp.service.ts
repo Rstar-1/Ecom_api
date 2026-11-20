@@ -5,6 +5,11 @@ import type { OtpTarget } from "./auth.types";
 
 const generateOtp = (): string => String(Math.floor(1000 + Math.random() * 9000));
 
+const contactFilter = ({ mobile, email }: OtpTarget) => ({
+  ...(mobile ? { mobile } : {}),
+  ...(email ? { email } : {}),
+});
+
 /* ================= SEND OTP ================= */
 export const generateAndSendOtp = async ({
   mobile,
@@ -16,11 +21,7 @@ export const generateAndSendOtp = async ({
   const otp = generateOtp();
 
   await Otp.findOneAndUpdate(
-    {
-      purpose,
-      ...(mobile ? { mobile } : {}),
-      ...(email ? { email } : {}),
-    },
+    { purpose, ...contactFilter({ mobile, email }) },
     {
       $set: {
         mobile: mobile ?? null,
@@ -36,25 +37,29 @@ export const generateAndSendOtp = async ({
   );
 
   // TODO: deliver the OTP via SMS/email (Twilio / SMTP settings exist in env).
-  logger.info(`OTP_SENT: ${mobile ?? email}`);
+  logger.info(`OTP_SENT (${purpose}): ${mobile ?? email}`);
   return otp;
 };
 
 /* ================= VERIFY OTP ================= */
-export const verifyOtp = async ({ mobile, email, otp }: OtpTarget & { otp: string }): Promise<void> => {
+export const verifyOtp = async ({
+  mobile,
+  email,
+  otp,
+  purpose = "REGISTER",
+}: OtpTarget & { otp: string; purpose?: OtpPurpose }): Promise<void> => {
   if (!mobile && !email) throw AppError.badRequest("Mobile or Email required");
 
   const record = await Otp.findOne({
     code: otp,
-    purpose: "REGISTER",
+    purpose,
     expiresAt: { $gt: new Date() },
-    ...(mobile ? { mobile } : {}),
-    ...(email ? { email } : {}),
+    ...contactFilter({ mobile, email }),
   });
 
   if (!record) throw AppError.badRequest("Invalid or expired OTP");
 
   await Otp.updateOne({ _id: record._id }, { $set: { isVerified: true }, $inc: { attempts: 1 } });
 
-  logger.info(`OTP_VERIFIED: ${mobile ?? email}`);
+  logger.info(`OTP_VERIFIED (${purpose}): ${mobile ?? email}`);
 };

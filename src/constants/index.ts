@@ -17,9 +17,41 @@ export const messages = {
 
 export const roles = {
   ADMIN: "admin",
-  VENDOR: "vendor",
+  MANAGER: "manager",
   CUSTOMER: "customer",
-  USER: "user",
+  VENDOR: "vendor",
+  ACCOUNTANT: "accountant",
+  ARCHIVED: "archived",
+} as const;
+
+/** Roles that bypass permission checks (same rule as feature/practice). */
+export const SUPER_ROLES: readonly string[] = [roles.ADMIN, roles.MANAGER];
+
+/** Permission names used by the route guards. Admin/manager and `*` / `Full_Access` bypass them. */
+export const PERMISSIONS = {
+  USER_CREATE: "USER_CREATE",
+  USER_VIEW: "USER_VIEW",
+  USER_UPDATE: "USER_UPDATE",
+  USER_DELETE: "USER_DELETE",
+  ROLE_CREATE: "ROLE_CREATE",
+  ROLE_UPDATE: "ROLE_UPDATE",
+  ROLE_DELETE: "ROLE_DELETE",
+  PRODUCT_CREATE: "PRODUCT_CREATE",
+  PRODUCT_UPDATE: "PRODUCT_UPDATE",
+  PRODUCT_DELETE: "PRODUCT_DELETE",
+  CATEGORY_CREATE: "CATEGORY_CREATE",
+  CATEGORY_UPDATE: "CATEGORY_UPDATE",
+  CATEGORY_DELETE: "CATEGORY_DELETE",
+  BLOG_CREATE: "BLOG_CREATE",
+  BLOG_UPDATE: "BLOG_UPDATE",
+  BLOG_DELETE: "BLOG_DELETE",
+  LEAD_VIEW: "LEAD_VIEW",
+  LEAD_UPDATE: "LEAD_UPDATE",
+  LEAD_DELETE: "LEAD_DELETE",
+  CAMPAIGN_VIEW: "CAMPAIGN_VIEW",
+  CAMPAIGN_MANAGE: "CAMPAIGN_MANAGE",
+  CAMPAIGN_SEND: "CAMPAIGN_SEND",
+  SEO_MANAGE: "SEO_MANAGE",
 } as const;
 
 export const HTTP_STATUS = {

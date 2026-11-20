@@ -1,17 +1,27 @@
 import { Router } from "express";
-import { roles } from "../../constants";
-import { authMiddleware, checkPermission } from "../../middlewares";
-import { createRole, deleteRole, getRoleById, getRoles, updateRole } from "./role.controller";
+import { PERMISSIONS } from "../../constants";
+import { authMiddleware, checkPermission, handleFormData } from "../../middlewares";
+import {
+  bulkDeleteRoles,
+  createRole,
+  deleteRole,
+  getRoleById,
+  getRoles,
+  updateRole,
+} from "./role.controller";
 
 const router = Router();
 
-/* Admin only */
-router.use(authMiddleware, checkPermission(roles.ADMIN));
-
-router.post("/", createRole);
+/* Public reads (sign-up forms need the role list) */
 router.get("/", getRoles);
+
+/* Writes need login + permission (admin/manager always allowed) */
+router.post("/", authMiddleware, checkPermission(PERMISSIONS.ROLE_CREATE), handleFormData, createRole);
+router.post("/bulk-delete", authMiddleware, checkPermission(PERMISSIONS.ROLE_DELETE), bulkDeleteRoles);
+router.delete("/bulk-delete", authMiddleware, checkPermission(PERMISSIONS.ROLE_DELETE), bulkDeleteRoles);
+
 router.get("/:id", getRoleById);
-router.put("/:id", updateRole);
-router.delete("/:id", deleteRole);
+router.put("/:id", authMiddleware, checkPermission(PERMISSIONS.ROLE_UPDATE), handleFormData, updateRole);
+router.delete("/:id", authMiddleware, checkPermission(PERMISSIONS.ROLE_DELETE), deleteRole);
 
 export default router;

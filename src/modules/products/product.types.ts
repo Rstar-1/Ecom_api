@@ -1,30 +1,42 @@
-export const PRODUCT_STATUSES = ["pending", "approved", "rejected"] as const;
-export type ProductStatus = (typeof PRODUCT_STATUSES)[number];
-
-export interface ProductVariant {
-  size?: string;
-  color?: string;
-  price?: number;
-  stock?: number;
-  sku?: string;
-}
+import type { ReviewInput, SpecificationInput } from "../../models";
+import type { ListQuery } from "../../utils";
 
 export interface ProductBody {
-  name?: string;
+  id?: string;
+  productName?: string;
   description?: string;
+  shortDesc?: string;
+  price?: number | string;
+  unit?: string;
+  currency?: string;
+  totalStock?: number | string;
+  reservedStock?: number | string;
+  stockStatus?: boolean | string;
+  isTrending?: boolean | string;
+  severity?: string;
+  /** Mongo _id, PCAT-001 or category name */
   categoryId?: string;
-  images?: string[];
-  basePrice?: number;
-  attributes?: Record<string, unknown>;
-  variants?: ProductVariant[];
-  totalStock?: number;
-  status?: ProductStatus;
-  isActive?: boolean;
+  image?: string;
+  /** Arrays may also be sent as JSON strings or comma separated strings (multipart) */
+  images?: string[] | string;
+  badges?: string[] | string;
+  specifications?: SpecificationInput[] | string;
+  reviews?: ReviewInput[] | string;
+  isActive?: boolean | string;
+  isDeleted?: boolean | string;
 }
 
-export interface ProductListQuery {
+export interface ProductListQuery extends ListQuery {
   categoryId?: string;
-  vendorId?: string;
-  search?: string;
-  status?: string;
+  severity?: string;
+  isTrending?: string;
+  stockStatus?: string;
 }
+
+export interface ReviewParams {
+  id: string;
+  reviewId: string;
+  [key: string]: string;
+}
+
+export type ProductFiles = Partial<Record<"image" | "images", Express.Multer.File[]>>;
