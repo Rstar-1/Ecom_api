@@ -16,7 +16,7 @@ router.post(
 );
 router.post("/verify-otp", verifyOtp);
 router.post("/login", login);
-router.get("/test", test);
+router.get("/test00", test);
 
 router.post("/logout", authMiddleware, logout);
 
