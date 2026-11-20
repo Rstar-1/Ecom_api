@@ -37,6 +37,7 @@ const contactFilter = (email?: string, mobile?: string) => {
 export const registerUser = async (data: RegisterBody): Promise<RegisterResult> => {
   const email = data.email?.toLowerCase().trim();
   const mobile = data.mobile?.trim();
+  console.log(data,"datadatadatadata")
 
   if (!email && !mobile) throw AppError.badRequest("Email or mobile is required");
   if (!data.password) throw AppError.badRequest("Password is required");
@@ -45,8 +46,8 @@ export const registerUser = async (data: RegisterBody): Promise<RegisterResult> 
   const exists = await User.exists({ $or: contactFilter(email, mobile) });
   if (exists) throw AppError.conflict("User already exists");
 
-  const role = data.role ? await validateRole(data.role) : roles.USER;
-
+//   const role = data.role ? await validateRole(data.role) : roles.USER;
+// console.log(role,"rolerole")
   let shopDetails = parseJsonObject<ShopDetails>(data.shopDetails);
   let documents = parseJsonObject<UserDocuments>(data.documents);
   if (isEmptyObject(shopDetails)) shopDetails = null;
@@ -57,7 +58,7 @@ export const registerUser = async (data: RegisterBody): Promise<RegisterResult> 
     email: email || undefined,
     mobile: mobile || undefined,
     password: data.password,
-    role,
+    role:data.role, 
     status: false,
     isOtpVerified: false,
     image: data.image ?? "",

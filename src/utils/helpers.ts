@@ -33,6 +33,7 @@ export const parseJsonObject = <T extends object>(value: unknown): T | null => {
 export const validateRole = async (role?: string): Promise<string> => {
   if (!role) return roles.USER;
   const exists = await Role.exists({ name: role, isDeleted: false, isActive: true });
+  console.log(exists,"existsexistsexists")
   if (!exists) throw AppError.badRequest("Invalid role");
   return role;
 };

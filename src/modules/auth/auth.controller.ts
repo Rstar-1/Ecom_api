@@ -3,12 +3,13 @@ import { successResponse } from "../../utils";
 import type { LoginBody, RegisterBody, VerifyOtpBody } from "./auth.types";
 import * as service from "./auth.service";
 
-/* POST /api/auth/register */
 export const register: ApiHandler<EmptyParams, RegisterBody> = async (req, res, next) => {
   try {
+    console.log(req.body)
     const data = await service.registerUser(req.body ?? {});
     successResponse(res, data, "OTP sent");
   } catch (error) {
+    console.log(error,"errorerror")
     next(error);
   }
 };
