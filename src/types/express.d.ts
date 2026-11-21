@@ -8,6 +8,7 @@ export interface AuthUser {
   role: string;
   roleId?: string;
   permissions: string[];
+  pages?: string[];
 }
 
 declare global {

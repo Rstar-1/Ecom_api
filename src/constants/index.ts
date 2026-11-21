@@ -17,6 +17,7 @@ export const messages = {
 
 export const roles = {
   ADMIN: "admin",
+  DEV_ADMIN: "dev admin",
   MANAGER: "manager",
   CUSTOMER: "customer",
   VENDOR: "vendor",
@@ -25,7 +26,16 @@ export const roles = {
 } as const;
 
 /** Roles that bypass permission checks (same rule as feature/practice). */
-export const SUPER_ROLES: readonly string[] = [roles.ADMIN, roles.MANAGER];
+export const SUPER_ROLES: readonly string[] = [
+  roles.ADMIN,
+  roles.DEV_ADMIN,
+  roles.MANAGER,
+  "dev admin",
+  "dev_admin",
+  "devadmin",
+  "super admin",
+  "super_admin",
+];
 
 /** Permission names used by the route guards. Admin/manager and `*` / `Full_Access` bypass them. */
 export const PERMISSIONS = {

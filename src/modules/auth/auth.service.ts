@@ -4,7 +4,7 @@ import { messages, PERMISSIONS, roles } from "../../constants";
 import { hasPermission } from "../../middlewares";
 import { Otp, Role, User } from "../../models";
 import type { AuthUser } from "../../types/express";
-import { AppError, jwt, parseAddress, str, toBool } from "../../utils";
+import { AppError, isObjectId, jwt, parseAddress, str, toBool } from "../../utils";
 import { PUBLIC_SIGNUP_ROLES, resolveRole, userWithRole } from "../roles/role.helpers";
 import type { ContactBody, LoginBody, RegisterBody, ResetPasswordBody, VerifyOtpBody } from "./auth.types";
 import { generateAndSendOtp, verifyOtp } from "./otp.service";
@@ -122,9 +122,16 @@ export const loginUser = async (body: LoginBody) => {
   user.lastLogin = new Date();
   await user.save();
 
-  const roleDoc = user.roleId
-    ? await Role.findById(user.roleId)
-    : await Role.findOne({ rolename: user.role || roles.CUSTOMER });
+  let roleDoc = user.roleId && isObjectId(user.roleId)
+    ? await Role.findOne({ _id: user.roleId, isDeleted: false })
+    : null;
+  if (!roleDoc) {
+    const roleName = (user.role || roles.CUSTOMER).toLowerCase();
+    roleDoc = await Role.findOne({
+      $or: [{ rolename: roleName }, { name: roleName }],
+      isDeleted: false,
+    });
+  }
   const summary = userWithRole(user, roleDoc);
 
   const token = jwt.generateToken(
@@ -135,6 +142,7 @@ export const loginUser = async (body: LoginBody) => {
       role: summary.role,
       roleId: (roleDoc?._id ?? user.roleId ?? "").toString(),
       permissions: summary.permissions,
+      pages: summary.pages,
     },
     ENV.JWT_SECRET,
     ENV.JWT_EXPIRES_IN
