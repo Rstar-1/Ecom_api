@@ -53,7 +53,7 @@ jobs:
       # 5. BUILD TYPESCRIPT
       # ==========================================
       - name: Build application
-        run: npm run build
+        run: npx tsc-watch
 
       # ==========================================
       # 6. VERIFY BUILD
