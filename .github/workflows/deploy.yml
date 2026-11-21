@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - development
-
   workflow_dispatch:
 
 permissions:
@@ -20,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository
+      # 1. Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -39,8 +38,14 @@ jobs:
       - name: Run tests
         run: npm test --if-present
 
-      # 5. Copy Node.js application to EC2
-      - name: Copy Node.js application to EC2
+      # 5. Build TypeScript
+      - name: Build application
+        run: |
+          npm run build
+          test -f dist/server.js
+
+      # 6. Deploy files to EC2
+      - name: Copy application to EC2
         uses: burnett01/rsync-deployments@v8
         with:
           switches: >-
@@ -59,7 +64,7 @@ jobs:
           remote_key: ${{ secrets.EC2_SSH_KEY }}
           remote_port: 22
 
-      # 6. Install dependencies and restart PM2
+      # 7. Install production dependencies and restart PM2
       - name: Restart Node.js application
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -74,22 +79,18 @@ jobs:
 
             npm ci --omit=dev
 
-            # Start or restart backend using PM2
-            if pm2 describe ecom-api > /dev/null 2>&1; then
-              pm2 restart ecom-api --update-env
+            if pm2 describe Ecom_api > /dev/null 2>&1; then
+              pm2 restart Ecom_api --update-env
             else
-              pm2 start npm --name ecom-api -- start
+              pm2 start npm --name Ecom_api --cwd /var/www/Ecom_api -- start
             fi
 
-            # Save PM2 process list
             pm2 save
-
-            # Check application status
             pm2 status
 
-            echo "Node.js deployment completed successfully"
+            echo "Deployment completed"
 
-      # 7. Verify Nginx
+      # 8. Verify and reload Nginx
       - name: Reload Nginx
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -103,4 +104,4 @@ jobs:
             sudo nginx -t
             sudo systemctl reload nginx
 
-            echo "Nginx reloaded successfully"
+            echo "Nginx reload completed"
