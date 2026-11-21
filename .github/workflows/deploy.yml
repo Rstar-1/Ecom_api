@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - development
-
   workflow_dispatch:
 
 permissions:
@@ -16,72 +15,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
-    name: Build and Deploy to AWS EC2
+  deploy:
+    name: Build and Deploy
     runs-on: ubuntu-latest
 
     steps:
-
-      # 1. CHECKOUT CODE
+      # Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. SETUP NODE.JS
+      # Node.js setup
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      # 3. INSTALL DEPENDENCIES
+      # Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # 4. RUN TESTS
+      # Test
       - name: Run tests
         run: npm test --if-present
 
-      # 5. BUILD TYPESCRIPT
+      # Build
       - name: Build application
         run: npm run build
 
-      # 6. VERIFY BUILD
-      - name: Verify build output
-        run: |
-          if [ ! -f dist/server.js ]; then
-            echo "ERROR: dist/server.js not found"
-            exit 1
-          fi
+      # Verify build
+      - name: Verify build
+        run: test -f dist/server.js
 
-          echo "Build verified successfully"
-
-      # 7. CREATE DEPLOYMENT VERSION
+      # Deployment version
       - name: Create deployment version
-        run: |
-          echo "${GITHUB_SHA}" > deployment-version.txt
-          echo "Deploying commit: ${GITHUB_SHA}"
+        run: echo "${GITHUB_SHA}" > deployment-version.txt
 
-      # 8. PREPARE EC2 DIRECTORY
-      - name: Prepare EC2 deployment directory
+      # Prepare EC2
+      - name: Prepare EC2 directory
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
           script: |
             set -e
-
             sudo mkdir -p /var/www/Ecom_api
+            sudo chown "$(id -un):$(id -gn)" /var/www/Ecom_api
 
-            sudo chown -R "$(id -un):$(id -gn)" /var/www/Ecom_api
-
-            sudo chmod 755 /var/www/Ecom_api
-
-            echo "EC2 directory ready"
-
-      # 9. COPY FILES TO EC2
-      - name: Deploy files to EC2
+      # Deploy files
+      - name: Deploy to EC2
         uses: burnett01/rsync-deployments@v8
         with:
           switches: >-
@@ -98,14 +81,13 @@ jobs:
           remote_key: ${{ secrets.EC2_SSH_KEY }}
           remote_port: 22
 
-      # 10. INSTALL AND RESTART APPLICATION
+      # Install and restart
       - name: Install and restart application
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
           script: |
             set -e
 
@@ -113,28 +95,11 @@ jobs:
             APP_NAME="Ecom_api"
             APP_PORT="5000"
 
-            echo "Starting EC2 deployment"
-
             cd "$APP_DIR"
 
-            # Verify build output
-            if [ ! -f dist/server.js ]; then
-              echo "ERROR: dist/server.js not found"
-              exit 1
-            fi
+            test -f dist/server.js
 
-            # Install production dependencies
-            echo "Installing production dependencies..."
             npm ci --omit=dev
-
-            # Verify dependencies
-            if [ ! -d node_modules ]; then
-              echo "ERROR: node_modules installation failed"
-              exit 1
-            fi
-
-            # Restart PM2
-            echo "Restarting PM2 application..."
 
             pm2 delete "$APP_NAME" || true
 
@@ -143,78 +108,48 @@ jobs:
               --cwd "$APP_DIR" \
               -- start
 
-            # Wait for API
+            # API health check
             API_READY=0
 
             for i in $(seq 1 30); do
-              if curl --fail --silent \
-                "http://127.0.0.1:${APP_PORT}/" > /dev/null; then
+              if curl -fsS "http://127.0.0.1:${APP_PORT}/" > /dev/null; then
                 API_READY=1
                 break
               fi
-
-              echo "Waiting for API... attempt $i/30"
               sleep 2
             done
 
             if [ "$API_READY" -ne 1 ]; then
-              echo "ERROR: API health check failed"
               pm2 logs "$APP_NAME" --lines 50 --nostream
               exit 1
             fi
 
-            echo "API responding successfully"
-
-            # Save PM2
             pm2 save
-            pm2 status
 
-            # Verify PM2
-            if ! pm2 describe "$APP_NAME" > /dev/null 2>&1; then
-              echo "ERROR: PM2 application not found"
-              exit 1
-            fi
-
-            # Test Nginx
+            # Nginx
             sudo nginx -t
-
-            # Reload Nginx
             sudo systemctl reload nginx
 
-            # Verify Nginx proxy
-            curl --fail --silent --show-error \
-              http://127.0.0.1/ > /dev/null
+            curl -fsS http://127.0.0.1/ > /dev/null
 
-            echo "=================================="
-            echo "DEPLOYMENT SUCCESSFUL"
-            echo "=================================="
-
-            echo "Application: $APP_NAME"
-            echo "Directory: $APP_DIR"
-            echo "Port: $APP_PORT"
-            echo "Deployed commit: $(cat deployment-version.txt)"
+            echo "Deployment successful"
+            echo "Commit: $(cat deployment-version.txt)"
 
             pm2 status
 
-      # 11. SUCCESS SUMMARY
+      # Success
       - name: Deployment successful
         if: success()
         run: |
-          echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
-          echo "Branch: development"
-          echo "Server: AWS EC2"
+          echo "Deployment completed successfully"
           echo "Application: Ecom_api"
-          echo "Directory: /var/www/Ecom_api"
-          echo "PM2: Running"
-          echo "Port: 5000"
-          echo "Nginx: Reloaded"
+          echo "Branch: development"
           echo "Commit: ${GITHUB_SHA}"
 
-      # 12. FAILURE SUMMARY
+      # Failure
       - name: Deployment failed
         if: failure()
         run: |
-          echo "DEPLOYMENT FAILED"
-          echo "Branch: development"
+          echo "Deployment failed"
           echo "Commit: ${GITHUB_SHA}"
-          echo "Please inspect the failed GitHub Actions step."
+          echo "Check failed GitHub Actions step"
