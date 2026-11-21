@@ -35,6 +35,6 @@ router.post("/verify-forgot-otp", verifyForgotPasswordOtp);
 router.post("/verify-forgot-password-otp", verifyForgotPasswordOtp);
 router.post("/reset-password", resetPassword);
 
-router.get("/test1", test);
+router.get("/test111", test);
 
 export default router;
