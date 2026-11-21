@@ -53,9 +53,9 @@ jobs:
       # 5. BUILD TYPESCRIPT
       # ==========================================
       - name: Build application
-        run: npx tsc-watch
+        run: npm run build
 
-      # ==========================================
+      # =================================git=========
       # 6. VERIFY BUILD
       # ==========================================
       - name: Verify build output
