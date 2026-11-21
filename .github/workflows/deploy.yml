@@ -1,70 +1,46 @@
 
-name: Deploy Ecom API to AWS EC2
+name: Deploy Node.js App to AWS EC2
 
 on:
   push:
     branches:
       - development
+
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ecom-api-deployment
+  group: node-ec2-deployment
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    name: Build and Deploy
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Node.js setup
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      # Install dependencies
+      # 3. Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # Test
+      # 4. Run tests
       - name: Run tests
         run: npm test --if-present
 
-      # Build
-      - name: Build application
-        run: npm run build
-
-      # Verify build
-      - name: Verify build
-        run: test -f dist/server.js
-
-      # Deployment version
-      - name: Create deployment version
-        run: echo "${GITHUB_SHA}" > deployment-version.txt
-
-      # Prepare EC2
-      - name: Prepare EC2 directory
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            set -e
-            sudo mkdir -p /var/www/Ecom_api
-            sudo chown "$(id -un):$(id -gn)" /var/www/Ecom_api
-
-      # Deploy files
-      - name: Deploy to EC2
+      # 5. Copy Node.js application to EC2
+      - name: Copy Node.js application to EC2
         uses: burnett01/rsync-deployments@v8
         with:
           switches: >-
@@ -73,6 +49,8 @@ jobs:
             --exclude=node_modules
             --exclude=.git
             --exclude=.github
+            --exclude=.env
+            --exclude=.env.*
             --exclude=*.log
           path: ./
           remote_path: /var/www/Ecom_api/
@@ -81,75 +59,48 @@ jobs:
           remote_key: ${{ secrets.EC2_SSH_KEY }}
           remote_port: 22
 
-      # Install and restart
-      - name: Install and restart application
+      # 6. Install dependencies and restart PM2
+      - name: Restart Node.js application
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
           script: |
             set -e
 
-            APP_DIR="/var/www/Ecom_api"
-            APP_NAME="Ecom_api"
-            APP_PORT="5000"
-
-            cd "$APP_DIR"
-
-            test -f dist/server.js
+            cd /var/www/Ecom_api/
 
             npm ci --omit=dev
 
-            pm2 delete "$APP_NAME" || true
-
-            pm2 start npm \
-              --name "$APP_NAME" \
-              --cwd "$APP_DIR" \
-              -- start
-
-            # API health check
-            API_READY=0
-
-            for i in $(seq 1 30); do
-              if curl -fsS "http://127.0.0.1:${APP_PORT}/" > /dev/null; then
-                API_READY=1
-                break
-              fi
-              sleep 2
-            done
-
-            if [ "$API_READY" -ne 1 ]; then
-              pm2 logs "$APP_NAME" --lines 50 --nostream
-              exit 1
+            # Start or restart backend using PM2
+            if pm2 describe ecom-api > /dev/null 2>&1; then
+              pm2 restart ecom-api --update-env
+            else
+              pm2 start npm --name ecom-api -- start
             fi
 
+            # Save PM2 process list
             pm2 save
 
-            # Nginx
+            # Check application status
+            pm2 status
+
+            echo "Node.js deployment completed successfully"
+
+      # 7. Verify Nginx
+      - name: Reload Nginx
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
             sudo nginx -t
             sudo systemctl reload nginx
 
-            curl -fsS http://127.0.0.1/ > /dev/null
-
-            echo "Deployment successful"
-            echo "Commit: $(cat deployment-version.txt)"
-
-            pm2 status
-
-      # Success
-      - name: Deployment successful
-        if: success()
-        run: |
-          echo "Deployment completed successfully"
-          echo "Application: Ecom_api"
-          echo "Branch: development"
-          echo "Commit: ${GITHUB_SHA}"
-
-      # Failure
-      - name: Deployment failed
-        if: failure()
-        run: |
-          echo "Deployment failed"
-          echo "Commit: ${GITHUB_SHA}"
-          echo "Check failed GitHub Actions step"
+            echo "Nginx reloaded successfully"
