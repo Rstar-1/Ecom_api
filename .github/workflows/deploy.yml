@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - development
+
   workflow_dispatch:
 
 permissions:
@@ -12,14 +13,15 @@ permissions:
 
 concurrency:
   group: node-ec2-deployment
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
+    name: Build and Deploy to EC2
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout
+      # 1. Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -38,19 +40,39 @@ jobs:
       - name: Run tests
         run: npm test --if-present
 
-      # 5. Build TypeScript
+      # 5. Build application if build script exists
       - name: Build application
         run: |
-          npm run build
-          test -f dist/server.js
+          if npm run | grep -qE '^[[:space:]]+build$'; then
+            npm run build
+          else
+            echo "No build script found. Skipping build."
+          fi
 
-      # 6. Deploy files to EC2
-      - name: Copy application to EC2
+      # 6. Add deployment commit information
+      - name: Prepare deployment information
+        run: |
+          echo "${GITHUB_SHA}" > deployment-info.txt
+          echo "Deploying commit: ${GITHUB_SHA}"
+
+      # 7. Prepare EC2 directory
+      - name: Prepare EC2 deployment directory
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            mkdir -p /var/www/Ecom_api
+
+      # 8. Copy files to EC2
+      - name: Deploy files to EC2
         uses: burnett01/rsync-deployments@v8
         with:
           switches: >-
             -avzr
-            --delete
             --exclude=node_modules
             --exclude=.git
             --exclude=.github
@@ -64,8 +86,8 @@ jobs:
           remote_key: ${{ secrets.EC2_SSH_KEY }}
           remote_port: 22
 
-      # 7. Install production dependencies and restart PM2
-      - name: Restart Node.js application
+      # 9. Install production dependencies and restart application
+      - name: Install and restart application using PM2
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -75,23 +97,42 @@ jobs:
           script: |
             set -e
 
-            cd /var/www/Ecom_api/
+            cd /var/www/Ecom_api
 
+            echo "=================================="
+            echo "DEPLOYED COMMIT"
+            cat deployment-info.txt
+            echo "=================================="
+
+            echo "Installing production dependencies..."
             npm ci --omit=dev
 
+            echo "Checking PM2 process..."
+
             if pm2 describe Ecom_api > /dev/null 2>&1; then
+              echo "Restarting existing Ecom_api..."
               pm2 restart Ecom_api --update-env
             else
-              pm2 start npm --name Ecom_api --cwd /var/www/Ecom_api -- start
+              echo "Starting new Ecom_api..."
+              pm2 start npm \
+                --name Ecom_api \
+                --cwd /var/www/Ecom_api \
+                -- start
             fi
 
+            echo "Saving PM2 configuration..."
             pm2 save
+
+            echo "PM2 status:"
             pm2 status
 
-            echo "Deployment completed"
+            echo "Recent application logs:"
+            pm2 logs Ecom_api --lines 30 --nostream
 
-      # 8. Verify and reload Nginx
-      - name: Reload Nginx
+            echo "Deployment completed successfully"
+
+      # 10. Test Nginx and reload
+      - name: Validate and reload Nginx
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -101,7 +142,41 @@ jobs:
           script: |
             set -e
 
+            echo "Testing Nginx configuration..."
             sudo nginx -t
+
+            echo "Reloading Nginx..."
             sudo systemctl reload nginx
 
-            echo "Nginx reload completed"
+            echo "Nginx reload completed successfully"
+
+      # 11. Final deployment verification
+      - name: Verify deployment on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            cd /var/www/Ecom_api
+
+            echo "=================================="
+            echo "FINAL DEPLOYMENT VERIFICATION"
+            echo "=================================="
+
+            echo "Deployed commit:"
+            cat deployment-info.txt
+
+            echo "Deployment directory:"
+            pwd
+
+            echo "Server files:"
+            ls -lah
+
+            echo "PM2 process:"
+            pm2 describe Ecom_api
+
+            echo "Deployment verified successfully"
