@@ -22,42 +22,30 @@ jobs:
 
     steps:
 
-      # ==========================================
       # 1. CHECKOUT CODE
-      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ==========================================
       # 2. SETUP NODE.JS
-      # ==========================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      # ==========================================
       # 3. INSTALL DEPENDENCIES
-      # ==========================================
       - name: Install dependencies
         run: npm ci
 
-      # ==========================================
       # 4. RUN TESTS
-      # ==========================================
       - name: Run tests
         run: npm test --if-present
 
-      # ==========================================
       # 5. BUILD TYPESCRIPT
-      # ==========================================
       - name: Build application
         run: npm run build
 
-      # =================================git=========
       # 6. VERIFY BUILD
-      # ==========================================
       - name: Verify build output
         run: |
           if [ ! -f dist/server.js ]; then
@@ -67,17 +55,13 @@ jobs:
 
           echo "Build verified successfully"
 
-      # ==========================================
       # 7. CREATE DEPLOYMENT VERSION
-      # ==========================================
       - name: Create deployment version
         run: |
           echo "${GITHUB_SHA}" > deployment-version.txt
           echo "Deploying commit: ${GITHUB_SHA}"
 
-      # ==========================================
       # 8. PREPARE EC2 DIRECTORY
-      # ==========================================
       - name: Prepare EC2 deployment directory
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -88,7 +72,7 @@ jobs:
           script: |
             set -e
 
-            sudo mkdir -p /var/www/Ecom_api
+            sudo mkdir -p /var/www/Ecom_api/env
 
             sudo chown -R "$(id -un):$(id -gn)" /var/www/Ecom_api
 
@@ -96,9 +80,7 @@ jobs:
 
             echo "EC2 directory ready"
 
-      # ==========================================
       # 9. COPY FILES TO EC2
-      # ==========================================
       - name: Deploy files to EC2
         uses: burnett01/rsync-deployments@v8
         with:
@@ -108,8 +90,7 @@ jobs:
             --exclude=node_modules
             --exclude=.git
             --exclude=.github
-            --exclude=.env
-            --exclude=.env.*
+            --exclude=env/
             --exclude=*.log
           path: ./
           remote_path: /var/www/Ecom_api/
@@ -118,13 +99,7 @@ jobs:
           remote_key: ${{ secrets.EC2_SSH_KEY }}
           remote_port: 22
 
-      # ==========================================
-      # 10. INSTALL DEPENDENCIES
-      # ==========================================
-      # 11. RECREATE PM2 PROCESS
-      # 12. VERIFY API
-      # 13. RELOAD NGINX
-      # ==========================================
+      # 10. INSTALL AND RESTART APPLICATION
       - name: Install and restart application
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -138,22 +113,19 @@ jobs:
             APP_DIR="/var/www/Ecom_api"
             APP_NAME="Ecom_api"
             APP_PORT="5000"
+            ENV_FILE="$APP_DIR/env/dev.env"
 
-            echo "=================================="
             echo "Starting EC2 deployment"
-            echo "=================================="
 
             cd "$APP_DIR"
 
-            # Check deployment version
-            echo "Checking deployed commit..."
-
-            if [ ! -f deployment-version.txt ]; then
-              echo "ERROR: Deployment version file missing"
+            # Verify environment file
+            if [ ! -f "$ENV_FILE" ]; then
+              echo "ERROR: env/dev.env not found on EC2"
               exit 1
             fi
 
-            cat deployment-version.txt
+            echo "Environment file found"
 
             # Verify build output
             if [ ! -f dist/server.js ]; then
@@ -163,30 +135,25 @@ jobs:
 
             # Install production dependencies
             echo "Installing production dependencies..."
-
             npm ci --omit=dev
 
-            # Verify production dependencies
+            # Verify dependencies
             if [ ! -d node_modules ]; then
               echo "ERROR: node_modules installation failed"
               exit 1
             fi
 
-            # Recreate PM2 process to guarantee correct cwd
+            # Restart PM2
             echo "Restarting PM2 application..."
 
             pm2 delete "$APP_NAME" || true
-
-            cd "$APP_DIR"
 
             pm2 start npm \
               --name "$APP_NAME" \
               --cwd "$APP_DIR" \
               -- start
 
-            # Wait for application to start
-            echo "Waiting for API..."
-
+            # Wait for API
             API_READY=0
 
             for i in $(seq 1 30); do
@@ -202,43 +169,32 @@ jobs:
 
             if [ "$API_READY" -ne 1 ]; then
               echo "ERROR: API health check failed"
-
               pm2 logs "$APP_NAME" --lines 50 --nostream
-
               exit 1
             fi
 
-            echo "API is responding successfully"
+            echo "API responding successfully"
 
-            # Save PM2 process list
+            # Save PM2
             pm2 save
-
-            # Check PM2 status
             pm2 status
 
-            # Verify PM2 process
+            # Verify PM2
             if ! pm2 describe "$APP_NAME" > /dev/null 2>&1; then
               echo "ERROR: PM2 application not found"
               exit 1
             fi
 
-            # Validate Nginx configuration
-            echo "Testing Nginx configuration..."
-
+            # Test Nginx
             sudo nginx -t
 
             # Reload Nginx
-            echo "Reloading Nginx..."
-
             sudo systemctl reload nginx
 
             # Verify Nginx proxy
-            echo "Testing Nginx proxy..."
-
             curl --fail --silent --show-error \
               http://127.0.0.1/ > /dev/null
 
-            # Display deployed version
             echo "=================================="
             echo "DEPLOYMENT SUCCESSFUL"
             echo "=================================="
@@ -250,15 +206,11 @@ jobs:
 
             pm2 status
 
-      # ==========================================
-      # 14. SUCCESS SUMMARY
-      # ==========================================
+      # 11. SUCCESS SUMMARY
       - name: Deployment successful
         if: success()
         run: |
-          echo "=================================="
           echo "DEPLOYMENT COMPLETED SUCCESSFULLY"
-          echo "=================================="
           echo "Branch: development"
           echo "Server: AWS EC2"
           echo "Application: Ecom_api"
@@ -268,15 +220,11 @@ jobs:
           echo "Nginx: Reloaded"
           echo "Commit: ${GITHUB_SHA}"
 
-      # ==========================================
-      # 15. FAILURE SUMMARY
-      # ==========================================
+      # 12. FAILURE SUMMARY
       - name: Deployment failed
         if: failure()
         run: |
-          echo "=================================="
           echo "DEPLOYMENT FAILED"
-          echo "=================================="
           echo "Branch: development"
           echo "Commit: ${GITHUB_SHA}"
           echo "Please inspect the failed GitHub Actions step."
