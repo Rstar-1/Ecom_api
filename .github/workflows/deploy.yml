@@ -72,7 +72,7 @@ jobs:
           script: |
             set -e
 
-            sudo mkdir -p /var/www/Ecom_api/env
+            sudo mkdir -p /var/www/Ecom_api
 
             sudo chown -R "$(id -un):$(id -gn)" /var/www/Ecom_api
 
@@ -90,7 +90,6 @@ jobs:
             --exclude=node_modules
             --exclude=.git
             --exclude=.github
-            --exclude=env/
             --exclude=*.log
           path: ./
           remote_path: /var/www/Ecom_api/
@@ -113,19 +112,10 @@ jobs:
             APP_DIR="/var/www/Ecom_api"
             APP_NAME="Ecom_api"
             APP_PORT="5000"
-            ENV_FILE="$APP_DIR/env/dev.env"
 
             echo "Starting EC2 deployment"
 
             cd "$APP_DIR"
-
-            # Verify environment file
-            if [ ! -f "$ENV_FILE" ]; then
-              echo "ERROR: env/dev.env not found on EC2"
-              exit 1
-            fi
-
-            echo "Environment file found"
 
             # Verify build output
             if [ ! -f dist/server.js ]; then
