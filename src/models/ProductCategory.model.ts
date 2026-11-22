@@ -6,6 +6,7 @@ const productCategorySchema = new Schema(
   {
     id: { type: String, required: true, unique: true, trim: true }, // PCAT-001
     categoryName: { type: String, required: true, trim: true },
+    slug: { type: String, trim: true, default: "" },
     description: { type: String, default: "", trim: true },
     image: { type: String, default: "" },
     iconName: { type: String, default: "", trim: true },

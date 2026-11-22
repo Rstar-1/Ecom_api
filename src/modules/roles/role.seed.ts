@@ -1,4 +1,4 @@
-import { Role } from "../../models";
+import { ProductCategory, Role } from "../../models";
 import { logger } from "../../utils";
 
 export interface RoleSeedItem {
@@ -273,6 +273,12 @@ export const seedInitialRoles = async (): Promise<void> => {
     const indexes = await coll.indexes();
     if (indexes.some((idx) => idx.name === "name_1")) {
       await coll.dropIndex("name_1").catch(() => {});
+    }
+
+    const catColl = ProductCategory.collection;
+    const catIndexes = await catColl.indexes().catch(() => []);
+    if (catIndexes.some((idx) => idx.name === "slug_1")) {
+      await catColl.dropIndex("slug_1").catch(() => {});
     }
   } catch {
     /* ignore index drop errors */

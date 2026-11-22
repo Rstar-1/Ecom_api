@@ -56,9 +56,11 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
   const id = str(data.id);
   if (id && (await ProductCategory.exists({ id }))) throw AppError.conflict(`Category with ID ${id} already exists`);
 
+  const slug = (str(data.slug) || name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   const category = await ProductCategory.create({
     ...(id ? { id } : {}),
     categoryName: name,
+    slug,
     description: str(data.description),
     image: data.image ?? "",
     iconName: str(data.iconName),
@@ -115,6 +117,8 @@ export const updateCategory = async (identifier: string, data: CategoryBody) => 
   }
 
   if (data.description !== undefined) category.description = str(data.description);
+  if (data.slug !== undefined) category.slug = str(data.slug);
+  else if (name) category.slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   if (data.image !== undefined) category.image = data.image;
   if (data.iconName !== undefined) category.iconName = str(data.iconName);
   if (data.count !== undefined) category.count = Math.max(0, toNumber(data.count));

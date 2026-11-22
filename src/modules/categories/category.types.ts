@@ -4,6 +4,7 @@ export interface CategoryBody {
   id?: string;
   categoryName?: string;
   name?: string;
+  slug?: string;
   description?: string;
   image?: string;
   iconName?: string;

@@ -27,6 +27,13 @@ const POPULATE = [
   { path: "reviews.createdBy", select: CREATOR_POPULATE },
 ];
 
+export const computeReadTime = (...texts: unknown[]): string => {
+  const combined = texts.map((t) => str(t)).filter(Boolean).join(' ');
+  const words = combined.trim().split(/\s+/).filter(Boolean).length;
+  const mins = Math.max(1, Math.ceil(words / 200));
+  return `${mins} min read`;
+};
+
 const findBlog = async (identifier: string) => {
   const blog = await Blog.findOne(identifierFilter(identifier, (v) => [{ blogName: exactCi(v) }]));
   if (!blog) throw AppError.notFound("Blog not found");
@@ -67,7 +74,7 @@ export const createBlog = async (data: BlogBody, createdBy: string) => {
     shortDesc: str(data.shortDesc),
     quote: str(data.quote),
     image: data.image ?? "",
-    readTime: str(data.readTime) || "1 min read",
+    readTime: str(data.readTime) || computeReadTime(description, data.shortDesc),
     badges: parseList(data.badges),
     specifications: parseList<SpecificationInput>(data.specifications),
     isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
@@ -114,7 +121,11 @@ export const updateBlog = async (identifier: string, data: BlogBody) => {
   if (str(data.description)) blog.description = str(data.description);
   if (data.shortDesc !== undefined) blog.shortDesc = str(data.shortDesc);
   if (data.quote !== undefined) blog.quote = str(data.quote);
-  if (data.readTime !== undefined) blog.readTime = str(data.readTime);
+  if (data.readTime !== undefined) {
+    blog.readTime = str(data.readTime) || computeReadTime(blog.description, blog.shortDesc);
+  } else if (str(data.description) || data.shortDesc !== undefined) {
+    blog.readTime = computeReadTime(blog.description, blog.shortDesc);
+  }
   if (data.image !== undefined) blog.image = data.image;
   if (data.badges !== undefined) blog.set("badges", parseList(data.badges));
   if (data.specifications !== undefined) {
