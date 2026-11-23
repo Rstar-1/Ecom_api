@@ -1,4 +1,4 @@
-import { LEAD_SEVERITIES, Lead, type LeadSeverity } from "../../models";
+import { LEAD_SEVERITIES, Lead, type LeadSeverity } from "./lead.model";
 import {
   AppError,
   baseListFilter,

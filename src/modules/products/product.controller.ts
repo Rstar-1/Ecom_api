@@ -1,6 +1,6 @@
 import { HTTP_STATUS } from "../../constants";
 import { fileUrl } from "../../middlewares";
-import type { ReviewInput } from "../../models";
+import type { ReviewInput } from "./product.model";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { getAuthUser, successResponse } from "../../utils";
 import type { ProductBody, ProductFiles, ProductListQuery, ReviewParams } from "./product.types";

@@ -1,4 +1,4 @@
-import type { BreadcrumbInput, SeoType } from "../../models";
+import type { BreadcrumbInput, SeoType } from "./seo.model";
 
 export interface SeoSeed {
   id: string;

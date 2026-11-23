@@ -2,10 +2,10 @@ import mongoose from "mongoose";
 import {
   PRODUCT_SEVERITIES,
   Product,
-  ProductCategory,
   type ReviewInput,
   type SpecificationInput,
-} from "../../models";
+} from "./product.model";
+import { ProductCategory } from "../categories/category.model";
 import {
   AppError,
   baseListFilter,

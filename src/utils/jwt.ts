@@ -35,3 +35,8 @@ export const verifyToken = (token: string, secret: string): AuthUser | null => {
     return null;
   }
 };
+
+export const jwt = {
+  generateToken,
+  verifyToken,
+};

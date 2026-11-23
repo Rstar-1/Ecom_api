@@ -1,4 +1,4 @@
-import type { ButtonType, CampaignChannel, CampaignTemplateType } from "../../models";
+import type { ButtonType, CampaignChannel, CampaignTemplateType } from "./campaign.model";
 
 export interface CampaignTemplate {
   id: string;

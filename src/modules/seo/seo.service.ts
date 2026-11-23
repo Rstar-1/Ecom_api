@@ -1,4 +1,4 @@
-import { SEO, SEO_TYPES, type BreadcrumbInput, type SeoType } from "../../models";
+import { SEO, SEO_TYPES, type BreadcrumbInput, type SeoType } from "./seo.model";
 import {
   AppError,
   baseListFilter,

@@ -1,23 +1,33 @@
 import cors from "cors";
 import express from "express";
-import helmet from "helmet";
 import morgan from "morgan";
-import { errorMiddleware, notFoundHandler, rateLimiter, UPLOAD_DIR } from "./middlewares";
+import { corsOptions } from "./config/cors";
+import { securityMiddleware } from "./config/security";
+import { errorMiddleware, notFoundMiddleware, rateLimiter, UPLOAD_DIR } from "./middlewares";
 import apiRoutes from "./routes";
+import { accessLogStream } from "./utils/logger";
 
 const app = express();
 
 app.set("trust proxy", 1);
 
-app.use(helmet());
-app.use(cors({ origin: "*" }));
+/* Security & CORS */
+app.use(securityMiddleware);
+app.use(cors(corsOptions));
+
+/* Body Parsers */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan("dev"));
-app.use(rateLimiter);
 
+/* Logging (Console + logs/access.log) */
+app.use(morgan("dev"));
+app.use(morgan("combined", { stream: accessLogStream }));
+
+/* Rate Limiting & Static Files */
+app.use(rateLimiter);
 app.use("/uploads", express.static(UPLOAD_DIR));
 
+/* Root & Health */
 app.get("/", (_req, res) => {
   res.json({ success: true, message: "Ecom API running 🚀" });
 });
@@ -26,9 +36,11 @@ app.get("/health", (_req, res) => {
   res.json({ success: true, status: "ok", uptime: process.uptime() });
 });
 
+/* API Endpoints */
 app.use("/api", apiRoutes);
 
-app.use(notFoundHandler);
+/* 404 & Error Middlewares */
+app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
 export default app;

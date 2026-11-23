@@ -2,10 +2,12 @@ import bcrypt from "bcryptjs";
 import { ENV } from "../../config/env";
 import { messages, PERMISSIONS, roles } from "../../constants";
 import { hasPermission } from "../../middlewares";
-import { Otp, Role, User } from "../../models";
+import { Otp } from "./auth.model";
+import { Role } from "../roles/role.model";
+import { User } from "../users/user.model";
 import type { AuthUser } from "../../types/express";
 import { AppError, isObjectId, jwt, parseAddress, str, toBool } from "../../utils";
-import { PUBLIC_SIGNUP_ROLES, resolveRole, userWithRole } from "../roles/role.helpers";
+import { resolveRole, userWithRole } from "../roles/role.helpers";
 import type { ContactBody, LoginBody, RegisterBody, ResetPasswordBody, VerifyOtpBody } from "./auth.types";
 import { generateAndSendOtp, verifyOtp } from "./otp.service";
 
@@ -23,35 +25,55 @@ const contactOr = ({ email, mobile }: ContactBody) => {
 };
 
 /* ================= REGISTER ================= */
-/**
- * Public sign-up: customer/vendor role only, OTP verification required.
- * An authenticated admin (or USER_CREATE permission) may pick any role and
- * pre-verify / activate the account (dashboard "Add user").
- */
 export const registerUser = async (data: RegisterBody, requester?: AuthUser) => {
-  const { email, mobile } = normalizeContact(data);
+  const fullname = str(data.fullname || (data as any).fullName || (data as any).name || (data as any).username || (data as any).userName);
+  const emailInput = (data.email || (data as any).userEmail || (data as any).emailId);
+  const mobileInput = (data.mobile || (data as any).phone || (data as any).phoneNumber || (data as any).contact);
+  const email = emailInput ? str(emailInput).toLowerCase() : undefined;
+  const mobile = mobileInput ? str(mobileInput) : undefined;
+  const password = str(data.password || (data as any).pass);
+
   if (!email && !mobile) throw AppError.badRequest("Email or mobile is required");
-  if (!data.password) throw AppError.badRequest("Password is required");
-  if (!str(data.fullname)) throw AppError.badRequest("Full name is required");
+  if (!password) throw AppError.badRequest("Password is required");
+  if (!fullname) throw AppError.badRequest("Full name is required");
 
   const queryOr = contactOr({ email, mobile });
   if (queryOr.length > 0) {
-    const exists = await User.exists({ $or: queryOr, isDeleted: false });
-    if (exists) throw AppError.conflict("User already exists with this email or mobile");
+    const existing = await User.findOne({ $or: queryOr, isDeleted: false });
+    if (existing) {
+      if (existing.isOtpVerified) {
+        throw AppError.conflict("User already exists with this email or mobile");
+      }
+      // If user registered but hasn't verified OTP yet, update credentials and re-send OTP
+      existing.fullname = fullname;
+      existing.password = password;
+      if (email) existing.email = email;
+      if (mobile) existing.mobile = mobile;
+      await existing.save();
+      await generateAndSendOtp({ mobile: existing.mobile, email: existing.email, purpose: "REGISTER" });
+      return {
+        message: "OTP sent successfully",
+        id: existing.id,
+        mobile: existing.mobile,
+        email: existing.email,
+        contact: existing.mobile || existing.email,
+      };
+    }
   }
 
+  const roleDoc = await resolveRole(data);
   const privileged = !!requester && hasPermission(requester, [PERMISSIONS.USER_CREATE]);
-  const roleDoc = await resolveRole(data, privileged ? undefined : PUBLIC_SIGNUP_ROLES);
   const isOtpVerified = privileged && data.isOtpVerified !== undefined ? toBool(data.isOtpVerified) : false;
+  const validRoleId = roleDoc?._id && isObjectId(roleDoc._id.toString()) ? roleDoc._id : undefined;
 
   const user = await User.create({
     ...(privileged && str(data.id) ? { id: str(data.id) } : {}),
-    fullname: str(data.fullname),
+    fullname,
     email: email || undefined,
     mobile: mobile || undefined,
-    password: data.password,
-    roleId: roleDoc._id,
-    role: roleDoc.rolename,
+    password,
+    roleId: validRoleId,
+    role: roleDoc?.rolename || "customer",
     isActive: privileged && data.isActive !== undefined ? toBool(data.isActive) : true,
     isOtpVerified,
     image: data.image ?? "",
@@ -59,7 +81,9 @@ export const registerUser = async (data: RegisterBody, requester?: AuthUser) => 
     documents: data.documents ?? null,
   });
 
-  await Role.updateOne({ _id: roleDoc._id }, { $inc: { count: 1 } });
+  if (roleDoc?._id) {
+    await Role.updateOne({ _id: roleDoc._id }, { $inc: { count: 1 } });
+  }
 
   if (!isOtpVerified) {
     await generateAndSendOtp({ mobile: user.mobile, email: user.email, purpose: "REGISTER" });

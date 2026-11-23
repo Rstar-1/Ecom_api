@@ -1,6 +1,6 @@
 import { Router } from "express";
 import authRoutes from "../modules/auth/auth.routes";
-import blogCategoryRoutes from "../modules/blog-categories/blogCategory.routes";
+import blogCategoryRoutes from "../modules/blog-categories/blog-category.routes";
 import blogRoutes from "../modules/blogs/blog.routes";
 import campaignRoutes from "../modules/campaigns/campaign.routes";
 import cartRoutes from "../modules/cart/cart.routes";

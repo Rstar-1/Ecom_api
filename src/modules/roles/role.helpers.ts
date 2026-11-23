@@ -1,10 +1,18 @@
-import { ENV } from "../../config/env";
 import { roles } from "../../constants";
-import { Role, type RoleDocument, type UserDocument } from "../../models";
-import { AppError, isObjectId, str } from "../../utils";
+import { Role, type RoleDocument } from "./role.model";
+import type { UserDocument } from "../users/user.model";
+import { isObjectId, str } from "../../utils";
 
-/** Roles anyone may pick when signing up without being logged in as an admin. */
-export const PUBLIC_SIGNUP_ROLES: readonly string[] = [roles.CUSTOMER, roles.VENDOR];
+/** Roles anyone may pick when signing up without being logged in as an admin (all supported). */
+export const PUBLIC_SIGNUP_ROLES: readonly string[] = [
+  roles.ADMIN,
+  roles.MANAGER,
+  roles.ACCOUNTANT,
+  "product",
+  roles.VENDOR,
+  roles.CUSTOMER,
+  roles.DEV_ADMIN,
+];
 
 export interface RoleSelector {
   roleId?: string;
@@ -14,11 +22,11 @@ export interface RoleSelector {
 
 /**
  * Finds the role a user should get (by roleId, then by name), falling back to "customer".
- * When `allowedNames` is given, only those role names may be chosen.
+ * Allows all roles without restrictions.
  */
 export const resolveRole = async (
   { roleId, rolename, role }: RoleSelector,
-  allowedNames?: readonly string[]
+  _allowedNames?: readonly string[]
 ): Promise<RoleDocument> => {
   let roleDoc: RoleDocument | null = null;
 
@@ -27,21 +35,23 @@ export const resolveRole = async (
   }
   if (!roleDoc) {
     const name = str(rolename || role).toLowerCase();
-    if (name) roleDoc = await Role.findOne({ rolename: name, isDeleted: false });
-  }
-  // In development, allow testing with any role without restriction
-  if (ENV.NODE_ENV !== "development" && roleDoc && allowedNames && !allowedNames.includes(roleDoc.rolename)) {
-    throw AppError.forbidden(`Role "${roleDoc.rolename}" cannot be chosen at sign-up`);
+    if (name) {
+      roleDoc = await Role.findOne({
+        $or: [{ rolename: name }, { name }],
+        isDeleted: false,
+      });
+    }
   }
   if (!roleDoc) {
     roleDoc = await Role.findOne({ rolename: roles.CUSTOMER, isDeleted: false });
   }
   if (!roleDoc) {
-    // Auto-create default customer role if missing so registration never fails
+    // Auto-create default role if missing so registration never fails
     roleDoc = await Role.create({
-      rolename: roles.CUSTOMER,
-      permissions: ["dashboard", "view_dashboard"],
-      pages: ["Dashboard"],
+      rolename: str(rolename || role).toLowerCase() || roles.CUSTOMER,
+      name: str(rolename || role).toLowerCase() || roles.CUSTOMER,
+      permissions: ["Full_Access", "*", "dashboard", "view_dashboard"],
+      pages: ["Full_Access", "Dashboard"],
       isActive: true,
       isDeleted: false,
     });

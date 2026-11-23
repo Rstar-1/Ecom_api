@@ -1,5 +1,5 @@
 import { ENV } from "../../config/env";
-import { Otp, type OtpPurpose } from "../../models";
+import { Otp, type OtpPurpose } from "./auth.model";
 import { AppError, logger } from "../../utils";
 import type { OtpTarget } from "./auth.types";
 

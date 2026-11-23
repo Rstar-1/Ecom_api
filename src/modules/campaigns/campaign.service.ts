@@ -5,13 +5,13 @@ import {
   CAMPAIGN_STATUSES,
   CAMPAIGN_TEMPLATE_TYPES,
   Campaign,
-  Lead,
   RECIPIENT_STATUSES,
-  User,
   type CampaignChannel,
   type CampaignDocument,
   type RecipientStatus,
-} from "../../models";
+} from "./campaign.model";
+import { Lead } from "../leads/lead.model";
+import { User } from "../users/user.model";
 import {
   AppError,
   baseListFilter,

@@ -47,9 +47,7 @@ const toHttpError = (err: unknown): { status: number; message: string; errors?: 
   return { status: HTTP_STATUS.INTERNAL_SERVER_ERROR, message: messages.INTERNAL_SERVER_ERROR };
 };
 
-export const notFoundHandler = (_req: Request, res: Response<ApiResponse>): void => {
-  errorResponse(res, "Route not found", HTTP_STATUS.NOT_FOUND);
-};
+export { notFoundHandler, notFoundMiddleware } from "./notFound.middleware";
 
 export const errorMiddleware = (
   err: unknown,

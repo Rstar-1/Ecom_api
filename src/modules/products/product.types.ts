@@ -1,4 +1,4 @@
-import type { ReviewInput, SpecificationInput } from "../../models";
+import type { ReviewInput, SpecificationInput } from "./product.model";
 import type { ListQuery } from "../../utils";
 
 export interface ProductBody {

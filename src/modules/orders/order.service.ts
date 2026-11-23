@@ -4,7 +4,7 @@ import {
   Order,
   type OrderPaymentStatus,
   type OrderStatus,
-} from "../../models";
+} from "./order.model";
 import { AppError } from "../../utils";
 import * as cartService from "../cart/cart.service";
 import type { OrderAddressBody } from "./order.types";

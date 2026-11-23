@@ -1,4 +1,4 @@
-import type { BreadcrumbInput } from "../../models";
+import type { BreadcrumbInput } from "./seo.model";
 import type { ListQuery } from "../../utils";
 
 export interface SeoBody {

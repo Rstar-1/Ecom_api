@@ -1,4 +1,5 @@
-import { Role, User } from "../../models";
+import { Role } from "./role.model";
+import { User } from "../users/user.model";
 import {
   AppError,
   baseListFilter,
@@ -34,21 +35,22 @@ const userCountsByRole = async (): Promise<Map<string, number>> => {
   return new Map(counts.map((c) => [String(c._id), c.count]));
 };
 
-/* ================= CREATE (restores a soft-deleted role with the same name) ================= */
+/* ================= CREATE (updates/restores if already exists) ================= */
 export const createRole = async (data: RoleBody) => {
   const rolename = roleName(data);
   if (!rolename) throw AppError.badRequest("Role name is required");
 
-  const existing = await Role.findOne({ rolename });
+  const existing = await Role.findOne({
+    $or: [{ rolename }, { name: rolename }],
+  });
   if (existing) {
-    if (!existing.isDeleted) throw AppError.conflict(`Role "${rolename}" already exists`);
     existing.isDeleted = false;
     existing.isActive = data.isActive !== undefined ? toBool(data.isActive) : true;
     if (data.permissions !== undefined) existing.set("permissions", parseList(data.permissions));
     if (data.pages !== undefined) existing.set("pages", parseList(data.pages));
     if (data.count !== undefined) existing.count = toNumber(data.count);
     await existing.save();
-    logger.info(`ROLE_RESTORED_AND_UPDATED: ${existing.rolename} (${existing.id})`);
+    logger.info(`ROLE_UPDATED: ${existing.rolename} (${existing.id})`);
     return existing;
   }
 
@@ -94,9 +96,6 @@ export const updateRole = async (identifier: string, data: RoleBody) => {
 
   const rolename = roleName(data);
   if (rolename) {
-    if (await Role.exists({ rolename, _id: { $ne: role._id }, isDeleted: false })) {
-      throw AppError.conflict("Role with this rolename already exists");
-    }
     role.rolename = rolename;
   }
 

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import Razorpay from "razorpay";
 import { ENV } from "../../config/env";
 import { HTTP_STATUS } from "../../constants";
-import { Payment } from "../../models";
+import { Payment } from "./payment.model";
 import { AppError } from "../../utils";
 import * as orderService from "../orders/order.service";
 import type { PaymentResult, VerifyPaymentBody } from "./payment.types";

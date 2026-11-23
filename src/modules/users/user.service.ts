@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { messages } from "../../constants";
-import { Role, User, type UserDocument } from "../../models";
+import { Role } from "../roles/role.model";
+import { User, type UserDocument } from "./user.model";
 import {
   AppError,
   baseListFilter,

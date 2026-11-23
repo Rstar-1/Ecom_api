@@ -1,4 +1,4 @@
-import type { OrderStatus } from "../../models";
+import type { OrderStatus } from "./order.model";
 
 export interface OrderAddressBody {
   fullName?: string;

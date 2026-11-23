@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
-import { Blog, BlogCategory, type ReviewInput, type SpecificationInput } from "../../models";
+import { Blog } from "./blog.model";
+import { BlogCategory } from "../blog-categories/blog-category.model";
+import type { ReviewInput, SpecificationInput } from "../products/product.model";
 import {
   AppError,
   baseListFilter,

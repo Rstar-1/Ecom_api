@@ -1,4 +1,5 @@
-import { Product, ProductCategory } from "../../models";
+import { Product } from "../products/product.model";
+import { ProductCategory } from "./category.model";
 import {
   AppError,
   baseListFilter,
@@ -35,27 +36,26 @@ const productCountsByCategory = async (): Promise<Map<string, number>> => {
   return new Map(counts.map((c) => [String(c._id), c.count]));
 };
 
-/* ================= CREATE (restores a soft-deleted category with the same name) ================= */
+/* ================= CREATE (updates/restores if already exists) ================= */
 export const createCategory = async (data: CategoryBody, createdBy: string) => {
   const name = categoryName(data);
   if (!name) throw AppError.badRequest("Category name is required");
 
-  const existing = await ProductCategory.findOne({ categoryName: name });
+  const existing = await ProductCategory.findOne({ categoryName: exactCi(name) });
   if (existing) {
-    if (!existing.isDeleted) throw AppError.conflict(`Category "${name}" already exists`);
     existing.isDeleted = false;
     existing.isActive = data.isActive !== undefined ? toBool(data.isActive) : true;
     if (data.description !== undefined) existing.description = str(data.description);
     if (data.image !== undefined) existing.image = data.image;
     if (data.iconName !== undefined) existing.iconName = str(data.iconName);
+    if (data.count !== undefined) existing.count = toNumber(data.count);
+    if (createdBy) existing.createdBy = createdBy as any;
     await existing.save();
-    logger.info(`CATEGORY_RESTORED_AND_UPDATED: ${existing.categoryName} (${existing.id})`);
-    return existing;
+    logger.info(`CATEGORY_UPDATED: ${existing.categoryName} (${existing.id})`);
+    return existing.populate("createdBy", CREATOR_POPULATE);
   }
 
   const id = str(data.id);
-  if (id && (await ProductCategory.exists({ id }))) throw AppError.conflict(`Category with ID ${id} already exists`);
-
   const slug = (str(data.slug) || name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   const category = await ProductCategory.create({
     ...(id ? { id } : {}),
@@ -102,9 +102,6 @@ export const updateCategory = async (identifier: string, data: CategoryBody) => 
 
   const name = categoryName(data);
   if (name) {
-    if (await ProductCategory.exists({ categoryName: name, _id: { $ne: category._id }, isDeleted: false })) {
-      throw AppError.conflict(`Category "${name}" already exists`);
-    }
     category.categoryName = name;
   }
 

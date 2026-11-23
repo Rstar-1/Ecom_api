@@ -1,4 +1,5 @@
-import { Cart, Product } from "../../models";
+import { Cart } from "./cart.model";
+import { Product } from "../products/product.model";
 import { AppError, identifierFilter } from "../../utils";
 import type { AddToCartBody, CartVariant } from "./cart.types";
 
