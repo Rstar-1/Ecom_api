@@ -27,6 +27,9 @@ aliasVirtual(blogSchema, "name", "blogName");
 aliasVirtual(blogSchema, "title", "blogName");
 applySequentialId(blogSchema, "BLOG", "blogs");
 
+blogSchema.index({ isDeleted: 1, isActive: 1, createdAt: -1 });
+blogSchema.index({ categoryId: 1, isDeleted: 1 });
+
 export const Blog = model("Blog", blogSchema, "blogs");
 export type IBlog = InferSchemaType<typeof blogSchema>;
 export type BlogDocument = ReturnType<(typeof Blog)["hydrate"]>;

@@ -189,17 +189,23 @@ export const nextSequentialId = async (
         .collection(collection)
         .find({ id: { $regex: pattern } }, { projection: { id: 1 }, maxTimeMS: 5000 })
         .toArray();
+      const existingIds = new Set(docs.map((d) => String(d.id)));
       const max = docs.reduce((acc, doc) => {
         const match = typeof doc.id === "string" ? pattern.exec(doc.id) : null;
         return match?.[1] ? Math.max(acc, Number.parseInt(match[1], 10)) : acc;
       }, 0);
-      const next = max + 1;
-      return `${prefix}-${String(next).padStart(Math.max(3, String(next).length), "0")}`;
+      let next = max + 1;
+      let candidate = `${prefix}-${String(next).padStart(Math.max(3, String(next).length), "0")}`;
+      while (existingIds.has(candidate)) {
+        next++;
+        candidate = `${prefix}-${String(next).padStart(Math.max(3, String(next).length), "0")}`;
+      }
+      return candidate;
     }
   } catch {
-    /* fallback to time-based sequential id */
+    /* fallback to timestamp sequential id */
   }
-  return `${prefix}-${Date.now().toString().slice(-4)}`;
+  return `${prefix}-${Date.now().toString().slice(-6)}`;
 };
 
 export const applySequentialId = (

@@ -3,6 +3,7 @@ import {
   AppError,
   baseListFilter,
   bulkFilter,
+  cache,
   identifierFilter,
   isPermanent,
   logger,
@@ -66,26 +67,34 @@ export const createLead = async (data: LeadBody, createdBy?: string) => {
   });
 
   if (lead.createdBy) await lead.populate("createdBy", CREATOR_POPULATE);
+  cache.invalidate("leads");
   logger.info(`LEAD_CREATED: ${lead.name} (${lead.id})`);
   return lead;
 };
 
 /* ================= LIST ================= */
 export const getLeads = async (query: LeadListQuery = {}) => {
-  const filter: Filter = {
-    ...baseListFilter({ isDeleted: query.isDeleted, isActive: query.publishedStatus ?? query.isActive }),
-    ...searchFilter(query.search, ["id", "name", "mobile", "email", "location", "description", "notes"]),
-  };
-  if (query.severity) filter.severity = str(query.severity).toLowerCase();
+  return cache.wrap(
+    "leads",
+    query as Record<string, unknown>,
+    async () => {
+      const filter: Filter = {
+        ...baseListFilter({ isDeleted: query.isDeleted, isActive: query.publishedStatus ?? query.isActive }),
+        ...searchFilter(query.search, ["id", "name", "mobile", "email", "location", "description", "notes"]),
+      };
+      if (query.severity) filter.severity = str(query.severity).toLowerCase();
 
-  const paging = readPagination(query, 10);
-  const base = Lead.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
-  const [leads, total] = await Promise.all([
-    paging.isPaginated ? base.skip(paging.skip).limit(paging.limit) : base,
-    paging.isPaginated ? Lead.countDocuments(filter) : Promise.resolve(0),
-  ]);
+      const paging = readPagination(query, 10, true);
+      const base = Lead.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
+      const [leads, total] = await Promise.all([
+        base.skip(paging.skip).limit(paging.limit).lean(),
+        Lead.countDocuments(filter),
+      ]);
 
-  return paging.isPaginated ? pagedResult("leads", leads, total, paging) : leads;
+      return pagedResult("leads", leads, total, paging);
+    },
+    30
+  );
 };
 
 /* ================= GET ONE (Mongo _id, LED-001, mobile or email) ================= */
@@ -113,6 +122,7 @@ export const updateLead = async (identifier: string, data: LeadBody) => {
   if (data.isDeleted !== undefined) lead.isDeleted = toBool(data.isDeleted);
 
   await lead.save();
+  cache.invalidate("leads");
   if (lead.createdBy) await lead.populate("createdBy", CREATOR_POPULATE);
   logger.info(`LEAD_UPDATED: ${lead.name} (${lead.id})`);
   return lead;
@@ -131,6 +141,7 @@ export const updateLeadSeverity = (identifier: string, severity: unknown) => {
 export const deleteLead = async (identifier: string, permanent: boolean) => {
   const lead = await findLead(identifier);
 
+  cache.invalidate("leads");
   if (permanent) {
     await Lead.deleteOne({ _id: lead._id });
     logger.info(`LEAD_PERMANENTLY_DELETED: ${lead.name} (${lead.id})`);
@@ -146,6 +157,7 @@ export const deleteLead = async (identifier: string, permanent: boolean) => {
 /* ================= BULK DELETE ================= */
 export const bulkDeleteLeads = async (body: unknown) => {
   const filter = bulkFilter(readBulkIds(body, "leadIds"));
+  cache.invalidate("leads");
 
   if (isPermanent(body)) {
     const result = await Lead.deleteMany(filter);

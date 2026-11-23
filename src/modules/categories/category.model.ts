@@ -21,5 +21,8 @@ const productCategorySchema = new Schema(
 aliasVirtual(productCategorySchema, "name", "categoryName");
 applySequentialId(productCategorySchema, "PCAT", "categories");
 
+productCategorySchema.index({ isDeleted: 1, isActive: 1, createdAt: -1 });
+productCategorySchema.index({ categoryName: 1 });
+
 export const ProductCategory = model("ProductCategory", productCategorySchema, "categories");
 export type IProductCategory = InferSchemaType<typeof productCategorySchema>;

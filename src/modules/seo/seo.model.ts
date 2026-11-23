@@ -35,6 +35,9 @@ const seoSchema = new Schema(
 
 applySequentialId(seoSchema, "SEO", "seos");
 
+seoSchema.index({ isDeleted: 1, createdAt: -1 });
+seoSchema.index({ page: 1 });
+
 seoSchema.pre("validate", function () {
   if (!this.page && this.name) this.page = this.name;
 });

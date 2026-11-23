@@ -6,6 +6,7 @@ import {
   AppError,
   baseListFilter,
   bulkFilter,
+  cache,
   exactCi,
   identifierFilter,
   isObjectId,
@@ -37,24 +38,31 @@ const changeRoleCount = (roleId: unknown, by: 1 | -1) =>
 
 /* ================= LIST ================= */
 export const getUsers = async (query: UserListQuery = {}) => {
-  const filter: Filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "fullname", "email", "mobile"]) };
+  return cache.wrap(
+    "users",
+    query as Record<string, unknown>,
+    async () => {
+      const filter: Filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "fullname", "email", "mobile"]) };
 
-  const roleTerm = str(query.roleId || query.role || query.rolename);
-  if (roleTerm && roleTerm !== "all") {
-    const roleDoc = isObjectId(roleTerm)
-      ? { _id: new mongoose.Types.ObjectId(roleTerm) }
-      : await Role.findOne({ $or: [{ rolename: exactCi(roleTerm) }, { id: roleTerm }] }).select("_id").lean();
-    // unknown role -> match nothing
-    filter.roleId = roleDoc?._id ?? new mongoose.Types.ObjectId();
-  }
+      const roleTerm = str(query.roleId || query.role || query.rolename);
+      if (roleTerm && roleTerm !== "all") {
+        const roleDoc = isObjectId(roleTerm)
+          ? { _id: new mongoose.Types.ObjectId(roleTerm) }
+          : await Role.findOne({ $or: [{ rolename: exactCi(roleTerm) }, { id: roleTerm }] }).select("_id").lean();
+        // unknown role -> match nothing
+        filter.roleId = roleDoc?._id ?? new mongoose.Types.ObjectId();
+      }
 
-  const paging = readPagination(query, 20, true);
-  const [users, total] = await Promise.all([
-    User.find(filter).populate("roleId", ROLE_POPULATE).sort({ createdAt: -1 }).skip(paging.skip).limit(paging.limit),
-    User.countDocuments(filter),
-  ]);
+      const paging = readPagination(query, 20, true);
+      const [users, total] = await Promise.all([
+        User.find(filter).populate("roleId", ROLE_POPULATE).sort({ createdAt: -1 }).skip(paging.skip).limit(paging.limit).lean(),
+        User.countDocuments(filter),
+      ]);
 
-  return pagedResult("users", users, total, paging);
+      return pagedResult("users", users, total, paging);
+    },
+    30
+  );
 };
 
 /* ================= GET ONE (Mongo _id, USER-001, email or mobile) ================= */
@@ -102,6 +110,9 @@ export const updateUser = async (identifier: string, data: UpdateUserBody) => {
   }
 
   await user.save();
+  cache.invalidate("users");
+  cache.invalidate("roles");
+  cache.invalidate("roles_counts");
   return user.populate("roleId", ROLE_POPULATE);
 };
 
@@ -109,6 +120,9 @@ export const updateUser = async (identifier: string, data: UpdateUserBody) => {
 export const deleteUser = async (identifier: string) => {
   const user = await findUser(identifier);
 
+  cache.invalidate("users");
+  cache.invalidate("roles");
+  cache.invalidate("roles_counts");
   if (user.isDeleted) {
     await User.deleteOne({ _id: user._id });
     return { deleted: true, message: "User permanently deleted" };
@@ -125,6 +139,10 @@ export const bulkDeleteUsers = async (body: unknown) => {
   const ids = readBulkIds(body, "userIds");
   const users = await User.find(bulkFilter(ids.concat(ids.map((i) => i.toLowerCase())), ["email", "mobile"]));
   if (users.length === 0) throw AppError.notFound(messages.USER_NOT_FOUND);
+
+  cache.invalidate("users");
+  cache.invalidate("roles");
+  cache.invalidate("roles_counts");
 
   const active = users.filter((u) => !u.isDeleted);
   await Promise.all(active.map((u) => changeRoleCount(u.roleId, -1)));

@@ -15,6 +15,7 @@ import { User } from "../users/user.model";
 import {
   AppError,
   baseListFilter,
+  cache,
   containsCi,
   exactCi,
   identifierFilter,
@@ -244,6 +245,7 @@ export const createCampaign = async (data: CampaignBody, createdBy?: string) => 
     createdBy: createdBy ?? null,
   });
 
+  cache.invalidate("campaigns");
   logger.info(`CAMPAIGN_CREATED: ${campaign.name} (${campaign.id}) | Channel: ${campaign.channel}`);
   return campaign;
 };
@@ -372,22 +374,29 @@ export const sendSummary = (campaign: CampaignDocument): string => {
 
 /* ================= LIST ================= */
 export const getCampaigns = async (query: CampaignListQuery = {}) => {
-  const filter: Filter = {
-    ...baseListFilter(query),
-    ...searchFilter(query.search, ["id", "name", "subject", "body"]),
-  };
-  if (query.channel) filter.channel = str(query.channel).toLowerCase();
-  if (query.status) filter.status = str(query.status).toLowerCase();
-  if (query.templateType) filter.templateType = str(query.templateType).toLowerCase();
+  return cache.wrap(
+    "campaigns",
+    query as Record<string, unknown>,
+    async () => {
+      const filter: Filter = {
+        ...baseListFilter(query),
+        ...searchFilter(query.search, ["id", "name", "subject", "body"]),
+      };
+      if (query.channel) filter.channel = str(query.channel).toLowerCase();
+      if (query.status) filter.status = str(query.status).toLowerCase();
+      if (query.templateType) filter.templateType = str(query.templateType).toLowerCase();
 
-  const paging = readPagination(query, 10);
-  const base = Campaign.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
-  const [campaigns, total] = await Promise.all([
-    paging.isPaginated ? base.skip(paging.skip).limit(paging.limit) : base,
-    paging.isPaginated ? Campaign.countDocuments(filter) : Promise.resolve(0),
-  ]);
+      const paging = readPagination(query, 10, true);
+      const base = Campaign.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
+      const [campaigns, total] = await Promise.all([
+        base.skip(paging.skip).limit(paging.limit).lean(),
+        Campaign.countDocuments(filter),
+      ]);
 
-  return paging.isPaginated ? pagedResult("campaigns", campaigns, total, paging) : campaigns;
+      return pagedResult("campaigns", campaigns, total, paging);
+    },
+    30
+  );
 };
 
 /* ================= GET ONE (Mongo _id, CMP-001 or name) ================= */
@@ -442,6 +451,7 @@ export const updateCampaign = async (identifier: string, data: CampaignBody) => 
   if (data.isDeleted !== undefined) campaign.isDeleted = toBool(data.isDeleted);
 
   await campaign.save();
+  cache.invalidate("campaigns");
   logger.info(`CAMPAIGN_UPDATED: ${campaign.name} (${campaign.id})`);
   return campaign;
 };
@@ -450,6 +460,7 @@ export const updateCampaign = async (identifier: string, data: CampaignBody) => 
 export const deleteCampaign = async (identifier: string, permanent: boolean) => {
   const campaign = await findCampaign(identifier);
 
+  cache.invalidate("campaigns");
   if (permanent) {
     await Campaign.deleteOne({ _id: campaign._id });
     logger.info(`CAMPAIGN_PERMANENTLY_DELETED: ${campaign.name} (${campaign.id})`);

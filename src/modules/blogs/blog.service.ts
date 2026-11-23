@@ -6,6 +6,7 @@ import {
   AppError,
   baseListFilter,
   bulkFilter,
+  cache,
   exactCi,
   identifierFilter,
   isObjectId,
@@ -20,6 +21,14 @@ import {
   toBool,
   type Filter,
 } from "../../utils";
+
+const invalidateBlogCaches = () => {
+  cache.invalidate("blogs");
+  cache.invalidate("blogs_status_counts");
+  cache.invalidate("blog_categories");
+  cache.invalidate("blog_categories_counts");
+  cache.invalidate("blog_categories_status_counts");
+};
 import { CREATOR_POPULATE } from "../roles/role.helpers";
 import type { BlogBody, BlogListQuery } from "./blog.types";
 
@@ -84,32 +93,52 @@ export const createBlog = async (data: BlogBody, createdBy: string) => {
   });
 
   await changeCategoryCount(categoryId, 1);
+  invalidateBlogCaches();
   logger.info(`BLOG_CREATED: ${blog.blogName} (${blog.id})`);
   return blog.populate(POPULATE);
 };
 
 /* ================= LIST (always paginated, default 20) ================= */
 export const getBlogs = async (query: BlogListQuery = {}) => {
-  const filter: Filter = {
-    ...baseListFilter(query),
-    ...searchFilter(query.search, ["id", "blogName", "description", "shortDesc"]),
-  };
+  return cache.wrap(
+    "blogs",
+    query as Record<string, unknown>,
+    async () => {
+      const filter: Filter = {
+        ...baseListFilter(query),
+        ...searchFilter(query.search, ["id", "blogName", "description", "shortDesc"]),
+      };
 
-  if (query.categoryId) {
-    if (isObjectId(query.categoryId)) filter.categoryId = new mongoose.Types.ObjectId(query.categoryId);
-    else {
-      const cat = await BlogCategory.findOne({ id: query.categoryId }).select("_id").lean();
-      filter.categoryId = cat?._id ?? new mongoose.Types.ObjectId(); // unknown category -> no results
-    }
-  }
+      if (query.categoryId) {
+        if (isObjectId(query.categoryId)) filter.categoryId = new mongoose.Types.ObjectId(query.categoryId);
+        else {
+          const cat = await BlogCategory.findOne({ id: query.categoryId }).select("_id").lean();
+          filter.categoryId = cat?._id ?? new mongoose.Types.ObjectId(); // unknown category -> no results
+        }
+      }
 
-  const paging = readPagination(query, 20, true);
-  const [blogs, total] = await Promise.all([
-    Blog.find(filter).populate(POPULATE).sort({ createdAt: -1 }).skip(paging.skip).limit(paging.limit),
-    Blog.countDocuments(filter),
-  ]);
+      const paging = readPagination(query, 20, true);
 
-  return pagedResult("blogs", blogs, total, paging);
+      const [blogs, total, active, inactive, trash] = await Promise.all([
+        Blog.find(filter)
+          .select("id blogName shortDesc description quote readTime image categoryId isActive isDeleted createdBy createdAt updatedAt")
+          .populate("categoryId", "id categoryName")
+          .sort({ createdAt: -1 })
+          .skip(paging.skip)
+          .limit(paging.limit)
+          .lean(),
+        Blog.countDocuments(filter),
+        Blog.countDocuments({ isDeleted: false, isActive: true }),
+        Blog.countDocuments({ isDeleted: false, isActive: false }),
+        Blog.countDocuments({ isDeleted: true }),
+      ]);
+
+      const result: any = pagedResult("blogs", blogs, total, paging);
+      result.counts = { all: active + inactive, active, inactive, trash };
+      return result;
+    },
+    60
+  );
 };
 
 /* ================= GET ONE (Mongo _id, BLOG-001 or name) ================= */
@@ -153,6 +182,7 @@ export const updateBlog = async (identifier: string, data: BlogBody) => {
   }
 
   await blog.save();
+  invalidateBlogCaches();
   logger.info(`BLOG_UPDATED: ${blog.blogName} (${blog.id})`);
   return blog.populate(POPULATE);
 };
@@ -161,6 +191,7 @@ export const updateBlog = async (identifier: string, data: BlogBody) => {
 export const deleteBlog = async (identifier: string) => {
   const blog = await findBlog(identifier);
 
+  invalidateBlogCaches();
   if (blog.isDeleted) {
     await Blog.deleteOne({ _id: blog._id });
     logger.info(`BLOG_PERMANENTLY_DELETED: ${blog.blogName} (${blog.id})`);
@@ -180,6 +211,7 @@ export const bulkDeleteBlogs = async (body: unknown) => {
   const matched = await Blog.find(bulkFilter(ids));
   if (matched.length === 0) throw AppError.notFound("No matching blogs found");
 
+  invalidateBlogCaches();
   const active = matched.filter((b) => !b.isDeleted);
   await Promise.all(active.map((b) => changeCategoryCount(b.categoryId, -1)));
 
@@ -217,6 +249,7 @@ export const addReview = async (identifier: string, review: ReviewInput, created
     createdBy,
   });
   await blog.save();
+  invalidateBlogCaches();
   logger.info(`BLOG_REVIEW_ADDED: ${blog.id}`);
   return blog.populate(POPULATE);
 };
@@ -228,5 +261,6 @@ export const deleteReview = async (identifier: string, reviewId: string) => {
 
   blog.reviews.splice(index, 1);
   await blog.save();
+  invalidateBlogCaches();
   return { deleted: true, message: "Review deleted successfully" };
 };

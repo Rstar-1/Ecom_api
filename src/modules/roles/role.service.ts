@@ -4,6 +4,7 @@ import {
   AppError,
   baseListFilter,
   bulkFilter,
+  cache,
   identifierFilter,
   isPermanent,
   logger,
@@ -26,15 +27,6 @@ const findRole = async (identifier: string) => {
   return role;
 };
 
-/** Live number of non-deleted users per role id. */
-const userCountsByRole = async (): Promise<Map<string, number>> => {
-  const counts = await User.aggregate<{ _id: unknown; count: number }>([
-    { $match: { isDeleted: false } },
-    { $group: { _id: "$roleId", count: { $sum: 1 } } },
-  ]);
-  return new Map(counts.map((c) => [String(c._id), c.count]));
-};
-
 /* ================= CREATE (updates/restores if already exists) ================= */
 export const createRole = async (data: RoleBody) => {
   const rolename = roleName(data);
@@ -50,6 +42,8 @@ export const createRole = async (data: RoleBody) => {
     if (data.pages !== undefined) existing.set("pages", parseList(data.pages));
     if (data.count !== undefined) existing.count = toNumber(data.count);
     await existing.save();
+    cache.invalidate("roles");
+    cache.invalidate("roles_counts");
     logger.info(`ROLE_UPDATED: ${existing.rolename} (${existing.id})`);
     return existing;
   }
@@ -62,25 +56,30 @@ export const createRole = async (data: RoleBody) => {
     count: toNumber(data.count),
     isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
   });
+  cache.invalidate("roles");
+  cache.invalidate("roles_counts");
   logger.info(`ROLE_CREATED: ${role.rolename} (${role.id})`);
   return role;
 };
 
-/* ================= LIST (pagination only when ?page / ?limit is sent) ================= */
+/* ================= LIST ================= */
 export const getRoles = async (query: RoleListQuery = {}) => {
-  const filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "rolename"]) };
-  const paging = readPagination(query, 10);
-  const countMap = await userCountsByRole();
+  return cache.wrap(
+    "roles",
+    query as Record<string, unknown>,
+    async () => {
+      const filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "rolename"]) };
+      const paging = readPagination(query, 10, true);
 
-  const [rolesList, total] = await Promise.all([
-    paging.isPaginated
-      ? Role.find(filter).sort({ createdAt: -1 }).skip(paging.skip).limit(paging.limit).lean()
-      : Role.find(filter).sort({ createdAt: -1 }).lean(),
-    paging.isPaginated ? Role.countDocuments(filter) : Promise.resolve(0),
-  ]);
+      const [rolesList, total] = await Promise.all([
+        Role.find(filter).sort({ createdAt: -1 }).skip(paging.skip).limit(paging.limit).lean(),
+        Role.countDocuments(filter),
+      ]);
 
-  const withCounts = rolesList.map((r) => ({ ...r, count: countMap.get(String(r._id)) ?? r.count ?? 0 }));
-  return paging.isPaginated ? pagedResult("roles", withCounts, total, paging) : withCounts;
+      return pagedResult("roles", rolesList, total, paging);
+    },
+    60
+  );
 };
 
 /* ================= GET ONE ================= */
@@ -114,6 +113,8 @@ export const updateRole = async (identifier: string, data: RoleBody) => {
   if (data.isDeleted !== undefined) role.isDeleted = toBool(data.isDeleted);
 
   await role.save();
+  cache.invalidate("roles");
+  cache.invalidate("roles_counts");
   logger.info(`ROLE_UPDATED: ${role.rolename} (${role.id})`);
   return role;
 };
@@ -122,6 +123,8 @@ export const updateRole = async (identifier: string, data: RoleBody) => {
 export const deleteRole = async (identifier: string) => {
   const role = await findRole(identifier);
 
+  cache.invalidate("roles");
+  cache.invalidate("roles_counts");
   if (role.isDeleted) {
     await Role.deleteOne({ _id: role._id });
     logger.info(`ROLE_PERMANENTLY_DELETED: ${role.rolename} (${role.id})`);
@@ -139,6 +142,9 @@ export const bulkDeleteRoles = async (body: unknown) => {
   const ids = readBulkIds(body, "roleIds");
   const matched = await Role.find(bulkFilter(ids.concat(ids.map((i) => i.toLowerCase())), ["rolename"]));
   if (matched.length === 0) throw AppError.notFound("No matching roles found");
+
+  cache.invalidate("roles");
+  cache.invalidate("roles_counts");
 
   if (isPermanent(body)) {
     await Role.deleteMany({ _id: { $in: matched.map((r) => r._id) } });

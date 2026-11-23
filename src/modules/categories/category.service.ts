@@ -4,10 +4,12 @@ import {
   AppError,
   baseListFilter,
   bulkFilter,
+  cache,
   exactCi,
   identifierFilter,
   isPermanent,
   logger,
+  nextSequentialId,
   pagedResult,
   readBulkIds,
   readPagination,
@@ -27,21 +29,18 @@ const findCategory = async (identifier: string) => {
   return category;
 };
 
-/** Live number of non-deleted products per category. */
-const productCountsByCategory = async (): Promise<Map<string, number>> => {
-  const counts = await Product.aggregate<{ _id: unknown; count: number }>([
-    { $match: { isDeleted: false } },
-    { $group: { _id: "$categoryId", count: { $sum: 1 } } },
-  ]);
-  return new Map(counts.map((c) => [String(c._id), c.count]));
-};
-
 /* ================= CREATE (updates/restores if already exists) ================= */
 export const createCategory = async (data: CategoryBody, createdBy: string) => {
   const name = categoryName(data);
   if (!name) throw AppError.badRequest("Category name is required");
 
-  const existing = await ProductCategory.findOne({ categoryName: exactCi(name) });
+  const existing = await ProductCategory.findOne({
+    $or: [
+      { categoryName: exactCi(name) },
+      ...(data.id ? [{ id: str(data.id) }] : []),
+    ],
+  });
+
   if (existing) {
     existing.isDeleted = false;
     existing.isActive = data.isActive !== undefined ? toBool(data.isActive) : true;
@@ -51,41 +50,106 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
     if (data.count !== undefined) existing.count = toNumber(data.count);
     if (createdBy) existing.createdBy = createdBy as any;
     await existing.save();
+    cache.invalidate("categories");
+    cache.invalidate("categories_counts");
+    cache.invalidate("categories_status_counts");
     logger.info(`CATEGORY_UPDATED: ${existing.categoryName} (${existing.id})`);
-    return existing.populate("createdBy", CREATOR_POPULATE);
+    try {
+      await existing.populate("createdBy", CREATOR_POPULATE);
+    } catch {}
+    return existing;
   }
 
   const id = str(data.id);
   const slug = (str(data.slug) || name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  const category = await ProductCategory.create({
-    ...(id ? { id } : {}),
-    categoryName: name,
-    slug,
-    description: str(data.description),
-    image: data.image ?? "",
-    iconName: str(data.iconName),
-    count: toNumber(data.count),
-    isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
-    createdBy,
-  });
-  logger.info(`CATEGORY_CREATED: ${category.categoryName} (${category.id})`);
-  return category.populate("createdBy", CREATOR_POPULATE);
+
+  try {
+    const category = await ProductCategory.create({
+      ...(id ? { id } : {}),
+      categoryName: name,
+      slug,
+      description: str(data.description),
+      image: data.image ?? "",
+      iconName: str(data.iconName),
+      count: toNumber(data.count),
+      isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
+      createdBy,
+    });
+    cache.invalidate("categories");
+    cache.invalidate("categories_counts");
+    cache.invalidate("categories_status_counts");
+    logger.info(`CATEGORY_CREATED: ${category.categoryName} (${category.id})`);
+    try {
+      await category.populate("createdBy", CREATOR_POPULATE);
+    } catch {}
+    return category;
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      const conflict = await ProductCategory.findOne({
+        $or: [{ categoryName: exactCi(name) }, ...(id ? [{ id }] : [])],
+      });
+      if (conflict) {
+        conflict.isDeleted = false;
+        conflict.isActive = data.isActive !== undefined ? toBool(data.isActive) : true;
+        if (data.description !== undefined) conflict.description = str(data.description);
+        if (data.image !== undefined) conflict.image = data.image;
+        if (data.iconName !== undefined) conflict.iconName = str(data.iconName);
+        if (data.count !== undefined) conflict.count = toNumber(data.count);
+        await conflict.save();
+        try {
+          await conflict.populate("createdBy", CREATOR_POPULATE);
+        } catch {}
+        return conflict;
+      }
+      const retryId = await nextSequentialId("categories", "PCAT");
+      const retry = await ProductCategory.create({
+        id: retryId,
+        categoryName: name,
+        slug: `${slug}-${Date.now().toString().slice(-4)}`,
+        description: str(data.description),
+        image: data.image ?? "",
+        iconName: str(data.iconName),
+        count: toNumber(data.count),
+        isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
+        createdBy,
+      });
+      try {
+        await retry.populate("createdBy", CREATOR_POPULATE);
+      } catch {}
+      return retry;
+    }
+    throw err;
+  }
 };
 
 /* ================= LIST ================= */
 export const getCategories = async (query: CategoryListQuery = {}) => {
-  const filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "categoryName", "description"]) };
-  const paging = readPagination(query, 10);
-  const countMap = await productCountsByCategory();
+  return cache.wrap(
+    "categories",
+    query as Record<string, unknown>,
+    async () => {
+      const filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "categoryName", "description"]) };
+      const paging = readPagination(query, 10, true);
 
-  const base = ProductCategory.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
-  const [categories, total] = await Promise.all([
-    (paging.isPaginated ? base.skip(paging.skip).limit(paging.limit) : base).lean(),
-    paging.isPaginated ? ProductCategory.countDocuments(filter) : Promise.resolve(0),
-  ]);
+      const [categories, total, active, inactive, trash] = await Promise.all([
+        ProductCategory.find(filter)
+          .select("id categoryName slug description image iconName count isActive isDeleted createdBy createdAt updatedAt")
+          .sort({ createdAt: -1 })
+          .skip(paging.skip)
+          .limit(paging.limit)
+          .lean(),
+        ProductCategory.countDocuments(filter),
+        ProductCategory.countDocuments({ isDeleted: false, isActive: true }),
+        ProductCategory.countDocuments({ isDeleted: false, isActive: false }),
+        ProductCategory.countDocuments({ isDeleted: true }),
+      ]);
 
-  const withCounts = categories.map((c) => ({ ...c, count: countMap.get(String(c._id)) ?? c.count ?? 0 }));
-  return paging.isPaginated ? pagedResult("categories", withCounts, total, paging) : withCounts;
+      const result: any = pagedResult("categories", categories, total, paging);
+      result.counts = { all: active + inactive, active, inactive, trash };
+      return result;
+    },
+    60
+  );
 };
 
 /* ================= GET ONE (Mongo _id, PCAT-001 or name) ================= */
@@ -123,6 +187,9 @@ export const updateCategory = async (identifier: string, data: CategoryBody) => 
   if (data.isDeleted !== undefined) category.isDeleted = toBool(data.isDeleted);
 
   await category.save();
+  cache.invalidate("categories");
+  cache.invalidate("categories_counts");
+  cache.invalidate("categories_status_counts");
   logger.info(`CATEGORY_UPDATED: ${category.categoryName} (${category.id})`);
   return category.populate("createdBy", CREATOR_POPULATE);
 };
@@ -131,6 +198,9 @@ export const updateCategory = async (identifier: string, data: CategoryBody) => 
 export const deleteCategory = async (identifier: string) => {
   const category = await findCategory(identifier);
 
+  cache.invalidate("categories");
+  cache.invalidate("categories_counts");
+  cache.invalidate("categories_status_counts");
   if (category.isDeleted) {
     await ProductCategory.deleteOne({ _id: category._id });
     logger.info(`CATEGORY_PERMANENTLY_DELETED: ${category.categoryName} (${category.id})`);
@@ -148,6 +218,10 @@ export const bulkDeleteCategories = async (body: unknown) => {
   const ids = readBulkIds(body, "categoryIds");
   const matched = await ProductCategory.find(bulkFilter(ids, ["categoryName"]));
   if (matched.length === 0) throw AppError.notFound("No matching categories found");
+
+  cache.invalidate("categories");
+  cache.invalidate("categories_counts");
+  cache.invalidate("categories_status_counts");
 
   if (isPermanent(body)) {
     await ProductCategory.deleteMany({ _id: { $in: matched.map((c) => c._id) } });

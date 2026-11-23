@@ -1,4 +1,5 @@
 export * from "./AppError";
+export * from "./cache";
 export * from "./helpers";
 export * from "./jwt";
 export * from "./logger";

@@ -17,11 +17,15 @@ export type PagedResult<K extends string, T> = Record<K, T[]> & Pagination & { p
 export const readPagination = (
   query: { page?: unknown; limit?: unknown },
   defaultLimit = 10,
-  always = false
+  always = true
 ): PageInfo => {
+  const isAll = query.limit === "all" || query.limit === "-1";
+  if (isAll) {
+    return { isPaginated: false, page: 1, limit: 1000, skip: 0 };
+  }
   const isPaginated = always || query.page !== undefined || query.limit !== undefined;
   const page = Math.max(1, Number.parseInt(String(query.page ?? ""), 10) || 1);
-  const limit = Math.min(Math.max(1, Number.parseInt(String(query.limit ?? ""), 10) || defaultLimit), 500);
+  const limit = Math.min(Math.max(1, Number.parseInt(String(query.limit ?? ""), 10) || defaultLimit), 200);
   return { isPaginated, page, limit, skip: (page - 1) * limit };
 };
 

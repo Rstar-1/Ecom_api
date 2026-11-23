@@ -10,6 +10,7 @@ import {
   AppError,
   baseListFilter,
   bulkFilter,
+  cache,
   exactCi,
   identifierFilter,
   isObjectId,
@@ -25,6 +26,14 @@ import {
   toNumber,
   type Filter,
 } from "../../utils";
+
+const invalidateProductCaches = () => {
+  cache.invalidate("products");
+  cache.invalidate("products_status_counts");
+  cache.invalidate("categories");
+  cache.invalidate("categories_counts");
+  cache.invalidate("categories_status_counts");
+};
 import { CREATOR_POPULATE } from "../roles/role.helpers";
 import type { ProductBody, ProductListQuery } from "./product.types";
 
@@ -109,36 +118,55 @@ export const createProduct = async (data: ProductBody, createdBy: string) => {
   });
 
   await changeCategoryCount(categoryId, 1);
+  invalidateProductCaches();
   logger.info(`PRODUCT_CREATED: ${product.productName} (${product.id})`);
   return product.populate(POPULATE);
 };
 
 /* ================= LIST ================= */
 export const getProducts = async (query: ProductListQuery = {}) => {
-  const filter: Filter = {
-    ...baseListFilter(query),
-    ...searchFilter(query.search, ["id", "productName", "shortDesc", "description"]),
-  };
+  return cache.wrap(
+    "products",
+    query as Record<string, unknown>,
+    async () => {
+      const filter: Filter = {
+        ...baseListFilter(query),
+        ...searchFilter(query.search, ["id", "productName", "shortDesc", "description"]),
+      };
 
-  if (query.categoryId) {
-    if (isObjectId(query.categoryId)) filter.categoryId = new mongoose.Types.ObjectId(query.categoryId);
-    else {
-      const cat = await ProductCategory.findOne({ id: query.categoryId }).select("_id").lean();
-      filter.categoryId = cat?._id ?? new mongoose.Types.ObjectId(); // unknown category -> no results
-    }
-  }
-  if (query.severity) filter.severity = toSeverity(query.severity);
-  if (query.isTrending !== undefined) filter.isTrending = toBool(query.isTrending);
-  if (query.stockStatus !== undefined) filter.stockStatus = toBool(query.stockStatus);
+      if (query.categoryId) {
+        if (isObjectId(query.categoryId)) filter.categoryId = new mongoose.Types.ObjectId(query.categoryId);
+        else {
+          const cat = await ProductCategory.findOne({ id: query.categoryId }).select("_id").lean();
+          filter.categoryId = cat?._id ?? new mongoose.Types.ObjectId(); // unknown category -> no results
+        }
+      }
+      if (query.severity) filter.severity = toSeverity(query.severity);
+      if (query.isTrending !== undefined) filter.isTrending = toBool(query.isTrending);
+      if (query.stockStatus !== undefined) filter.stockStatus = toBool(query.stockStatus);
 
-  const paging = readPagination(query, 10);
-  const base = Product.find(filter).populate(POPULATE).sort({ createdAt: -1 });
-  const [products, total] = await Promise.all([
-    (paging.isPaginated ? base.skip(paging.skip).limit(paging.limit) : base).lean(),
-    paging.isPaginated ? Product.countDocuments(filter) : Promise.resolve(0),
-  ]);
+      const paging = readPagination(query, 10, true);
 
-  return paging.isPaginated ? pagedResult("products", products, total, paging) : products;
+      const [products, total, active, inactive, trash] = await Promise.all([
+        Product.find(filter)
+          .select("id productName shortDesc description price discount categoryId severity isTrending stockStatus images badges specifications isActive isDeleted createdBy createdAt updatedAt")
+          .populate("categoryId", "id categoryName")
+          .sort({ createdAt: -1 })
+          .skip(paging.skip)
+          .limit(paging.limit)
+          .lean(),
+        Product.countDocuments(filter),
+        Product.countDocuments({ isDeleted: false, isActive: true }),
+        Product.countDocuments({ isDeleted: false, isActive: false }),
+        Product.countDocuments({ isDeleted: true }),
+      ]);
+
+      const result: any = pagedResult("products", products, total, paging);
+      result.counts = { all: active + inactive, active, inactive, trash };
+      return result;
+    },
+    60
+  );
 };
 
 /* ================= GET ONE (Mongo _id, PROD-001 or name) ================= */
@@ -194,6 +222,7 @@ export const updateProduct = async (identifier: string, data: ProductBody) => {
   }
 
   await product.save();
+  invalidateProductCaches();
   logger.info(`PRODUCT_UPDATED: ${product.productName} (${product.id})`);
   return product.populate(POPULATE);
 };
@@ -202,6 +231,7 @@ export const updateProduct = async (identifier: string, data: ProductBody) => {
 export const deleteProduct = async (identifier: string) => {
   const product = await findProduct(identifier);
 
+  invalidateProductCaches();
   if (product.isDeleted) {
     await Product.deleteOne({ _id: product._id });
     logger.info(`PRODUCT_PERMANENTLY_DELETED: ${product.productName} (${product.id})`);
@@ -221,6 +251,7 @@ export const bulkDeleteProducts = async (body: unknown) => {
   const matched = await Product.find(bulkFilter(ids, ["productName"]));
   if (matched.length === 0) throw AppError.notFound("No matching products found");
 
+  invalidateProductCaches();
   const active = matched.filter((p) => !p.isDeleted);
   await Promise.all(active.map((p) => changeCategoryCount(p.categoryId, -1)));
 
@@ -251,6 +282,7 @@ export const addReview = async (identifier: string, review: ReviewInput, created
 
   product.reviews.push(toReview({ ...review, id: `REV-${Date.now()}`, isDeleted: false }, createdBy));
   await product.save();
+  invalidateProductCaches();
   return product.populate(POPULATE);
 };
 
@@ -261,6 +293,7 @@ export const deleteReview = async (identifier: string, reviewId: string) => {
 
   product.reviews.splice(index, 1);
   await product.save();
+  invalidateProductCaches();
   logger.info(`REVIEW_DELETED: ${reviewId} from product ${product.id}`);
   return product.populate(POPULATE);
 };

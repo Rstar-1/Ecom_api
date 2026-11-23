@@ -17,5 +17,8 @@ const blogCategorySchema = new Schema(
 aliasVirtual(blogCategorySchema, "name", "categoryName");
 applySequentialId(blogCategorySchema, "BCAT", "blogcategories");
 
+blogCategorySchema.index({ isDeleted: 1, isActive: 1, createdAt: -1 });
+blogCategorySchema.index({ categoryName: 1 });
+
 export const BlogCategory = model("BlogCategory", blogCategorySchema, "blogcategories");
 export type IBlogCategory = InferSchemaType<typeof blogCategorySchema>;

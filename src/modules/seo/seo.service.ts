@@ -3,6 +3,7 @@ import {
   AppError,
   baseListFilter,
   bulkFilter,
+  cache,
   exactCi,
   identifierFilter,
   isPermanent,
@@ -109,26 +110,44 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
     isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
     createdBy,
   });
+  cache.invalidate("seo");
+  cache.invalidate("seo_status_counts");
   logger.info(`SEO_CREATED: ${seo.name} (${seo.id})`);
   return seo;
 };
 
 /* ================= LIST ================= */
 export const getSeoList = async (query: SeoListQuery = {}) => {
-  const filter: Filter = {
-    ...baseListFilter(query),
-    ...searchFilter(query.search, ["id", "name", "page", "path", "title", "description", "keywords"]),
-  };
-  if (query.type) filter.type = str(query.type).toLowerCase();
+  return cache.wrap(
+    "seo",
+    query as Record<string, unknown>,
+    async () => {
+      const filter: Filter = {
+        ...baseListFilter(query),
+        ...searchFilter(query.search, ["id", "name", "page", "path", "title", "description", "keywords"]),
+      };
+      if (query.type) filter.type = str(query.type).toLowerCase();
 
-  const paging = readPagination(query, 20);
-  const base = SEO.find(filter).populate("createdBy", CREATOR).sort({ createdAt: 1 });
-  const [seos, total] = await Promise.all([
-    (paging.isPaginated ? base.skip(paging.skip).limit(paging.limit) : base).lean(),
-    paging.isPaginated ? SEO.countDocuments(filter) : Promise.resolve(0),
-  ]);
+      const paging = readPagination(query, 20, true);
 
-  return paging.isPaginated ? pagedResult("seos", seos, total, paging) : seos;
+      const [seos, total, active, inactive, trash] = await Promise.all([
+        SEO.find(filter)
+          .sort({ createdAt: 1 })
+          .skip(paging.skip)
+          .limit(paging.limit)
+          .lean(),
+        SEO.countDocuments(filter),
+        SEO.countDocuments({ isDeleted: false, isActive: true }),
+        SEO.countDocuments({ isDeleted: false, isActive: false }),
+        SEO.countDocuments({ isDeleted: true }),
+      ]);
+
+      const result: any = pagedResult("seos", seos, total, paging);
+      result.counts = { all: active + inactive, active, inactive, trash };
+      return result;
+    },
+    60
+  );
 };
 
 /* ================= GET ONE ================= */
@@ -178,6 +197,8 @@ export const updateSeo = async (identifier: string, data: SeoBody) => {
   if (data.isDeleted !== undefined) seo.isDeleted = toBool(data.isDeleted);
 
   await seo.save();
+  cache.invalidate("seo");
+  cache.invalidate("seo_status_counts");
   logger.info(`SEO_UPDATED: ${seo.name} (${seo.id})`);
   return seo;
 };
@@ -186,6 +207,8 @@ export const updateSeo = async (identifier: string, data: SeoBody) => {
 export const deleteSeo = async (identifier: string, permanent: boolean) => {
   const seo = await findSeo(identifier);
 
+  cache.invalidate("seo");
+  cache.invalidate("seo_status_counts");
   if (permanent) {
     await SEO.deleteOne({ _id: seo._id });
     logger.info(`SEO_PERMANENTLY_DELETED: ${seo.name} (${seo.id})`);
@@ -201,6 +224,8 @@ export const deleteSeo = async (identifier: string, permanent: boolean) => {
 /* ================= BULK DELETE ================= */
 export const bulkDeleteSeo = async (body: unknown) => {
   const filter = bulkFilter(readBulkIds(body, "seoIds"), ["name"]);
+  cache.invalidate("seo");
+  cache.invalidate("seo_status_counts");
 
   if (isPermanent(body)) {
     const result = await SEO.deleteMany(filter);

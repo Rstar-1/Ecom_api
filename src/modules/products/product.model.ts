@@ -67,6 +67,9 @@ const productSchema = new Schema(
 aliasVirtual(productSchema, "name", "productName");
 applySequentialId(productSchema, "PROD", "products");
 
+productSchema.index({ isDeleted: 1, isActive: 1, createdAt: -1 });
+productSchema.index({ categoryId: 1, isDeleted: 1 });
+
 export const Product = model("Product", productSchema, "products");
 export type IProduct = InferSchemaType<typeof productSchema>;
 export type ProductDocument = ReturnType<(typeof Product)["hydrate"]>;
