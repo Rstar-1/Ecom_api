@@ -3,6 +3,7 @@ import { fileUrl } from "../../middlewares";
 import type { ReviewInput } from "./product.model";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { getAuthUser, successResponse } from "../../utils";
+import { resolveUserObjectId } from "../roles/role.helpers";
 import type { ProductBody, ProductFiles, ProductListQuery, ReviewParams } from "./product.types";
 import * as service from "./product.service";
 
@@ -20,7 +21,9 @@ const withFiles = (body: ProductBody | undefined, files: ProductFiles | undefine
 export const createProduct: ApiHandler<EmptyParams, ProductBody> = async (req, res, next) => {
   try {
     const body = withFiles(req.body, req.files as ProductFiles | undefined);
-    const data = await service.createProduct(body, getAuthUser(req).id);
+    const authId = getAuthUser(req).id;
+    const creator = (await resolveUserObjectId(body.createdBy)) || (await resolveUserObjectId(authId)) || authId;
+    const data = await service.createProduct(body, creator);
     successResponse(res, data, "Product created", HTTP_STATUS.CREATED);
   } catch (error) {
     next(error);

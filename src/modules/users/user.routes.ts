@@ -7,6 +7,7 @@ import {
   getProfile,
   getUserById,
   getUsers,
+  updateProfile,
   updateUser,
   uploadDocuments,
 } from "./user.controller";
@@ -17,6 +18,7 @@ router.use(authMiddleware);
 
 /* ================= PROFILE ================= */
 router.get("/profile", getProfile);
+router.put("/profile", updateProfile);
 router.post(
   "/upload-documents",
   upload.fields([

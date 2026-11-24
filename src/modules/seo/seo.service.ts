@@ -18,6 +18,7 @@ import {
   type Filter,
 } from "../../utils";
 import { SEO_SEED, SEO_SEED_IMAGE } from "./seo.seed";
+import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { SeoBody, SeoListQuery } from "./seo.types";
 
 const CREATOR = "id fullname email mobile";
@@ -83,7 +84,7 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
     if (data.title !== undefined) existing.title = str(data.title);
     if (data.description !== undefined) existing.description = str(data.description);
     if (data.keywords !== undefined) existing.keywords = str(data.keywords);
-    if (data.image !== undefined) existing.image = str(data.image);
+    if (data.image !== undefined) existing.image = await uploadBase64ToGitHub(str(data.image), `seo-${name}`);
     if (data.type !== undefined) existing.type = toSeoType(data.type);
     if (data.noindex !== undefined) existing.noindex = toBool(data.noindex);
     if (data.breadcrumbs !== undefined) existing.set("breadcrumbs", parseBreadcrumbs(data.breadcrumbs));
@@ -103,7 +104,7 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
     title: str(data.title),
     description: str(data.description),
     keywords: str(data.keywords),
-    image: str(data.image),
+    image: data.image ? await uploadBase64ToGitHub(str(data.image), `seo-${name}`) : SEO_SEED_IMAGE,
     type: data.type ? toSeoType(data.type) : "website",
     noindex: toBool(data.noindex),
     breadcrumbs: parseBreadcrumbs(data.breadcrumbs),
@@ -189,7 +190,7 @@ export const updateSeo = async (identifier: string, data: SeoBody) => {
   if (data.title !== undefined) seo.title = str(data.title);
   if (data.description !== undefined) seo.description = str(data.description);
   if (data.keywords !== undefined) seo.keywords = str(data.keywords);
-  if (data.image !== undefined) seo.image = str(data.image);
+  if (data.image !== undefined) seo.image = await uploadBase64ToGitHub(str(data.image), `seo-${seo.name}`);
   if (data.type !== undefined) seo.type = toSeoType(data.type);
   if (data.noindex !== undefined) seo.noindex = toBool(data.noindex);
   if (data.breadcrumbs !== undefined) seo.set("breadcrumbs", parseBreadcrumbs(data.breadcrumbs));

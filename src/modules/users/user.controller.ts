@@ -24,6 +24,16 @@ export const getProfile: ApiHandler = async (req, res, next) => {
   }
 };
 
+/* PUT /api/users/profile */
+export const updateProfile: ApiHandler<EmptyParams, UpdateUserBody> = async (req, res, next) => {
+  try {
+    const data = await service.updateUser(getAuthUser(req).id, req.body ?? {});
+    successResponse(res, data, "Profile updated");
+  } catch (error) {
+    next(error);
+  }
+};
+
 /* GET /api/users/:id */
 export const getUserById: ApiHandler<IdParams> = async (req, res, next) => {
   try {

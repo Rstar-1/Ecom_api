@@ -11,6 +11,7 @@ export interface CategoryBody {
   count?: number | string;
   isActive?: boolean | string;
   isDeleted?: boolean | string;
+  createdBy?: string;
 }
 
 export type CategoryListQuery = ListQuery;

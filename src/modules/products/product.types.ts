@@ -24,6 +24,7 @@ export interface ProductBody {
   reviews?: ReviewInput[] | string;
   isActive?: boolean | string;
   isDeleted?: boolean | string;
+  createdBy?: string;
 }
 
 export interface ProductListQuery extends ListQuery {

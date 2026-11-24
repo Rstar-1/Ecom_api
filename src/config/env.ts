@@ -55,6 +55,11 @@ export interface Env {
   readonly SMTP_PASS: string | undefined;
   readonly SENDER_EMAIL: string;
   readonly SENDER_NAME: string;
+  readonly GITHUB_TOKEN: string | undefined;
+  readonly GITHUB_OWNER: string;
+  readonly GITHUB_REPO: string;
+  readonly GITHUB_BRANCH: string;
+  readonly GITHUB_FOLDER: string;
 }
 
 export const ENV: Env = Object.freeze({
@@ -87,4 +92,9 @@ export const ENV: Env = Object.freeze({
   SMTP_PASS: optional("SMTP_PASS")?.replace(/\s+/g, ""),
   SENDER_EMAIL: optional("SENDER_EMAIL") ?? optional("SMTP_USER") ?? "offers@yourbrand.in",
   SENDER_NAME: optional("SENDER_NAME") ?? "Company",
+  GITHUB_TOKEN: optional("GITHUB_TOKEN"),
+  GITHUB_OWNER: optional("GITHUB_OWNER") ?? "Rstar-1",
+  GITHUB_REPO: optional("GITHUB_REPO") ?? "generic_images",
+  GITHUB_BRANCH: optional("GITHUB_BRANCH") ?? "main",
+  GITHUB_FOLDER: optional("GITHUB_FOLDER") ?? "ashmita",
 });

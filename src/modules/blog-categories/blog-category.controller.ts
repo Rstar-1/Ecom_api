@@ -1,13 +1,16 @@
 import { HTTP_STATUS } from "../../constants";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { getAuthUser, successResponse } from "../../utils";
+import { resolveUserObjectId } from "../roles/role.helpers";
 import type { BlogCategoryBody, BlogCategoryListQuery } from "./blogCategory.types";
 import * as service from "./blog-category.service";
 
 /* POST /api/blog-categories */
 export const createBlogCategory: ApiHandler<EmptyParams, BlogCategoryBody> = async (req, res, next) => {
   try {
-    const data = await service.createBlogCategory(req.body ?? {}, getAuthUser(req).id);
+    const authId = getAuthUser(req).id;
+    const creator = (await resolveUserObjectId(req.body?.createdBy)) || (await resolveUserObjectId(authId)) || authId;
+    const data = await service.createBlogCategory(req.body ?? {}, creator);
     successResponse(res, data, "Blog Category created", HTTP_STATUS.CREATED);
   } catch (error) {
     next(error);

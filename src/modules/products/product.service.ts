@@ -35,6 +35,7 @@ const invalidateProductCaches = () => {
   cache.invalidate("categories_status_counts");
 };
 import { CREATOR_POPULATE } from "../roles/role.helpers";
+import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { ProductBody, ProductListQuery } from "./product.types";
 
 const POPULATE = [
@@ -94,6 +95,12 @@ export const createProduct = async (data: ProductBody, createdBy: string) => {
   const id = str(data.id);
   if (id && (await Product.exists({ id }))) throw AppError.conflict(`Product with ID ${id} already exists`);
 
+  const storedImage = data.image ? await uploadBase64ToGitHub(data.image, productName) : "";
+  const rawImages = parseList<string>(data.images);
+  const storedImages = await Promise.all(
+    rawImages.map((img, idx) => uploadBase64ToGitHub(img, `${productName}-${idx}`))
+  );
+
   const product = await Product.create({
     ...(id ? { id } : {}),
     productName,
@@ -108,8 +115,8 @@ export const createProduct = async (data: ProductBody, createdBy: string) => {
     isTrending: toBool(data.isTrending),
     severity: data.severity ? toSeverity(data.severity) : "pending",
     categoryId,
-    image: data.image ?? "",
-    images: parseList(data.images),
+    image: storedImage,
+    images: storedImages,
     badges: parseList(data.badges),
     specifications: parseList<SpecificationInput>(data.specifications),
     reviews: parseList<ReviewInput>(data.reviews).map((r) => toReview(r, createdBy)),
@@ -149,8 +156,9 @@ export const getProducts = async (query: ProductListQuery = {}) => {
 
       const [products, total, active, inactive, trash] = await Promise.all([
         Product.find(filter)
-          .select("id productName shortDesc description price discount categoryId severity isTrending stockStatus images badges specifications isActive isDeleted createdBy createdAt updatedAt")
+          .select("id productName shortDesc description price unit currency totalStock reservedStock discount categoryId severity isTrending stockStatus image images badges specifications isActive isDeleted createdBy createdAt updatedAt")
           .populate("categoryId", "id categoryName")
+          .populate("createdBy", CREATOR_POPULATE)
           .sort({ createdAt: -1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -190,8 +198,16 @@ export const updateProduct = async (identifier: string, data: ProductBody) => {
   if (data.stockStatus !== undefined) product.stockStatus = toBool(data.stockStatus);
   if (data.isTrending !== undefined) product.isTrending = toBool(data.isTrending);
   if (data.severity !== undefined) product.severity = toSeverity(data.severity);
-  if (data.image !== undefined) product.image = data.image;
-  if (data.images !== undefined) product.set("images", parseList(data.images));
+  if (data.image !== undefined) {
+    product.image = await uploadBase64ToGitHub(data.image, product.productName);
+  }
+  if (data.images !== undefined) {
+    const rawImages = parseList<string>(data.images);
+    const storedImages = await Promise.all(
+      rawImages.map((img, idx) => uploadBase64ToGitHub(img, `${product.productName}-${idx}`))
+    );
+    product.set("images", storedImages);
+  }
   if (data.badges !== undefined) product.set("badges", parseList(data.badges));
   if (data.specifications !== undefined) {
     product.set("specifications", parseList<SpecificationInput>(data.specifications));

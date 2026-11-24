@@ -3,6 +3,7 @@ import { fileUrl } from "../../middlewares";
 import type { ReviewInput } from "../products/product.model";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { getAuthUser, successResponse } from "../../utils";
+import { resolveUserObjectId } from "../roles/role.helpers";
 import type { ReviewParams } from "../products/product.types";
 import type { BlogBody, BlogListQuery } from "./blog.types";
 import * as service from "./blog.service";
@@ -15,7 +16,10 @@ const withImage = (body: BlogBody | undefined, file: Express.Multer.File | undef
 /* POST /api/blogs (JSON or multipart with `image`) */
 export const createBlog: ApiHandler<EmptyParams, BlogBody> = async (req, res, next) => {
   try {
-    const data = await service.createBlog(withImage(req.body, req.file), getAuthUser(req).id);
+    const body = withImage(req.body, req.file);
+    const authId = getAuthUser(req).id;
+    const creator = (await resolveUserObjectId(body.createdBy)) || (await resolveUserObjectId(authId)) || authId;
+    const data = await service.createBlog(body, creator);
     successResponse(res, data, "Blog created", HTTP_STATUS.CREATED);
   } catch (error) {
     next(error);

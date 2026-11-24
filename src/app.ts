@@ -3,7 +3,7 @@ import express from "express";
 import morgan from "morgan";
 import { corsOptions } from "./config/cors";
 import { securityMiddleware } from "./config/security";
-import { errorMiddleware, notFoundMiddleware, rateLimiter, UPLOAD_DIR } from "./middlewares";
+import { errorMiddleware, notFoundMiddleware, rateLimiter, resolveBase64Images, UPLOAD_DIR } from "./middlewares";
 import apiRoutes from "./routes";
 import { accessLogStream } from "./utils/logger";
 
@@ -16,8 +16,9 @@ app.use(securityMiddleware);
 app.use(cors(corsOptions));
 
 /* Body Parsers */
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+app.use(resolveBase64Images);
 
 /* Logging (Console + logs/access.log) */
 app.use(morgan("dev"));

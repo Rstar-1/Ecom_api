@@ -2,6 +2,7 @@ import { HTTP_STATUS } from "../../constants";
 import { fileUrl } from "../../middlewares";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { getAuthUser, successResponse } from "../../utils";
+import { resolveUserObjectId } from "../roles/role.helpers";
 import type { CategoryBody, CategoryListQuery } from "./category.types";
 import * as service from "./category.service";
 
@@ -13,7 +14,10 @@ const withImage = (body: CategoryBody | undefined, file: Express.Multer.File | u
 /* POST /api/categories (JSON or multipart with `image`) */
 export const createCategory: ApiHandler<EmptyParams, CategoryBody> = async (req, res, next) => {
   try {
-    const data = await service.createCategory(withImage(req.body, req.file), getAuthUser(req).id);
+    const body = withImage(req.body, req.file);
+    const authId = getAuthUser(req).id;
+    const creator = (await resolveUserObjectId(body.createdBy)) || (await resolveUserObjectId(authId)) || authId;
+    const data = await service.createCategory(body, creator);
     successResponse(res, data, "Category created", HTTP_STATUS.CREATED);
   } catch (error) {
     next(error);

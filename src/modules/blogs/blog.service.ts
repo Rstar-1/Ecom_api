@@ -30,6 +30,7 @@ const invalidateBlogCaches = () => {
   cache.invalidate("blog_categories_status_counts");
 };
 import { CREATOR_POPULATE } from "../roles/role.helpers";
+import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { BlogBody, BlogListQuery } from "./blog.types";
 
 const POPULATE = [
@@ -77,6 +78,8 @@ export const createBlog = async (data: BlogBody, createdBy: string) => {
   const id = str(data.id);
   if (id && (await Blog.exists({ id }))) throw AppError.conflict(`Blog with ID ${id} already exists`);
 
+  const storedImage = data.image ? await uploadBase64ToGitHub(data.image, blogName) : "";
+
   const blog = await Blog.create({
     ...(id ? { id } : {}),
     categoryId,
@@ -84,7 +87,7 @@ export const createBlog = async (data: BlogBody, createdBy: string) => {
     description,
     shortDesc: str(data.shortDesc),
     quote: str(data.quote),
-    image: data.image ?? "",
+    image: storedImage,
     readTime: str(data.readTime) || computeReadTime(description, data.shortDesc),
     badges: parseList(data.badges),
     specifications: parseList<SpecificationInput>(data.specifications),
@@ -123,6 +126,7 @@ export const getBlogs = async (query: BlogListQuery = {}) => {
         Blog.find(filter)
           .select("id blogName shortDesc description quote readTime image categoryId isActive isDeleted createdBy createdAt updatedAt")
           .populate("categoryId", "id categoryName")
+          .populate("createdBy", CREATOR_POPULATE)
           .sort({ createdAt: -1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -157,7 +161,7 @@ export const updateBlog = async (identifier: string, data: BlogBody) => {
   } else if (str(data.description) || data.shortDesc !== undefined) {
     blog.readTime = computeReadTime(blog.description, blog.shortDesc);
   }
-  if (data.image !== undefined) blog.image = data.image;
+  if (data.image !== undefined) blog.image = await uploadBase64ToGitHub(data.image, blog.blogName);
   if (data.badges !== undefined) blog.set("badges", parseList(data.badges));
   if (data.specifications !== undefined) {
     blog.set("specifications", parseList<SpecificationInput>(data.specifications));

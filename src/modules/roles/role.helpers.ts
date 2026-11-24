@@ -1,6 +1,6 @@
 import { roles } from "../../constants";
 import { Role, type RoleDocument } from "./role.model";
-import type { UserDocument } from "../users/user.model";
+import { User, type UserDocument } from "../users/user.model";
 import { isObjectId, str } from "../../utils";
 
 /** Roles anyone may pick when signing up without being logged in as an admin (all supported). */
@@ -83,4 +83,18 @@ export const userWithRole = (user: UserDocument, roleDoc: RoleDocument | null) =
 });
 
 export const ROLE_POPULATE = "id rolename permissions pages";
-export const CREATOR_POPULATE = "id fullname email mobile image";
+export const CREATOR_POPULATE = "id fullname email mobile image role";
+
+export const resolveUserObjectId = async (identifier: unknown): Promise<string | undefined> => {
+  if (!identifier) return undefined;
+  const strId = String(identifier).trim();
+  if (/^[a-f\d]{24}$/i.test(strId)) return strId;
+  try {
+    const u = await User.findOne({
+      $or: [{ id: strId }, { email: strId.toLowerCase() }, { mobile: strId }] as any,
+    }).select("_id").lean();
+    return u?._id ? (u._id as any).toString() : undefined;
+  } catch {
+    return undefined;
+  }
+};

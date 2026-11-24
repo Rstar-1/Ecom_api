@@ -16,6 +16,7 @@ export interface BlogBody {
   reviews?: ReviewInput[] | string;
   isActive?: boolean | string;
   isDeleted?: boolean | string;
+  createdBy?: string;
 }
 
 export interface BlogListQuery extends ListQuery {

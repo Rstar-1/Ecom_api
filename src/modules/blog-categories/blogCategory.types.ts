@@ -7,6 +7,7 @@ export interface BlogCategoryBody {
   count?: number | string;
   isActive?: boolean | string;
   isDeleted?: boolean | string;
+  createdBy?: string;
 }
 
 export type BlogCategoryListQuery = ListQuery;

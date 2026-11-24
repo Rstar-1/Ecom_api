@@ -19,6 +19,7 @@ import {
   toNumber,
 } from "../../utils";
 import { CREATOR_POPULATE } from "../roles/role.helpers";
+import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { CategoryBody, CategoryListQuery } from "./category.types";
 
 const categoryName = (data: CategoryBody) => str(data.categoryName || data.name);
@@ -34,6 +35,8 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
   const name = categoryName(data);
   if (!name) throw AppError.badRequest("Category name is required");
 
+  const storedImage = data.image !== undefined ? await uploadBase64ToGitHub(data.image, name) : undefined;
+
   const existing = await ProductCategory.findOne({
     $or: [
       { categoryName: exactCi(name) },
@@ -45,7 +48,7 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
     existing.isDeleted = false;
     existing.isActive = data.isActive !== undefined ? toBool(data.isActive) : true;
     if (data.description !== undefined) existing.description = str(data.description);
-    if (data.image !== undefined) existing.image = data.image;
+    if (storedImage !== undefined) existing.image = storedImage;
     if (data.iconName !== undefined) existing.iconName = str(data.iconName);
     if (data.count !== undefined) existing.count = toNumber(data.count);
     if (createdBy) existing.createdBy = createdBy as any;
@@ -69,7 +72,7 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
       categoryName: name,
       slug,
       description: str(data.description),
-      image: data.image ?? "",
+      image: storedImage ?? "",
       iconName: str(data.iconName),
       count: toNumber(data.count),
       isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
@@ -92,7 +95,7 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
         conflict.isDeleted = false;
         conflict.isActive = data.isActive !== undefined ? toBool(data.isActive) : true;
         if (data.description !== undefined) conflict.description = str(data.description);
-        if (data.image !== undefined) conflict.image = data.image;
+        if (storedImage !== undefined) conflict.image = storedImage;
         if (data.iconName !== undefined) conflict.iconName = str(data.iconName);
         if (data.count !== undefined) conflict.count = toNumber(data.count);
         await conflict.save();
@@ -107,7 +110,7 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
         categoryName: name,
         slug: `${slug}-${Date.now().toString().slice(-4)}`,
         description: str(data.description),
-        image: data.image ?? "",
+        image: storedImage ?? "",
         iconName: str(data.iconName),
         count: toNumber(data.count),
         isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
@@ -134,6 +137,7 @@ export const getCategories = async (query: CategoryListQuery = {}) => {
       const [categories, total, active, inactive, trash] = await Promise.all([
         ProductCategory.find(filter)
           .select("id categoryName slug description image iconName count isActive isDeleted createdBy createdAt updatedAt")
+          .populate("createdBy", CREATOR_POPULATE)
           .sort({ createdAt: -1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -180,7 +184,7 @@ export const updateCategory = async (identifier: string, data: CategoryBody) => 
   if (data.description !== undefined) category.description = str(data.description);
   if (data.slug !== undefined) category.slug = str(data.slug);
   else if (name) category.slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  if (data.image !== undefined) category.image = data.image;
+  if (data.image !== undefined) category.image = await uploadBase64ToGitHub(data.image, name || category.categoryName);
   if (data.iconName !== undefined) category.iconName = str(data.iconName);
   if (data.count !== undefined) category.count = Math.max(0, toNumber(data.count));
   if (data.isActive !== undefined) category.isActive = toBool(data.isActive);

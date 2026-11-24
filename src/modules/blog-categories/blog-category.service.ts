@@ -116,6 +116,7 @@ export const getBlogCategories = async (query: BlogCategoryListQuery = {}) => {
       const [categories, total, active, inactive, trash] = await Promise.all([
         BlogCategory.find(filter)
           .select("id categoryName count isActive isDeleted createdBy createdAt updatedAt")
+          .populate("createdBy", CREATOR_POPULATE)
           .sort({ createdAt: -1 })
           .skip(paging.skip)
           .limit(paging.limit)
