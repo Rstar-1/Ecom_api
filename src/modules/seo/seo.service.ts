@@ -19,9 +19,10 @@ import {
 } from "../../utils";
 import { SEO_SEED, SEO_SEED_IMAGE } from "./seo.seed";
 import { uploadBase64ToGitHub } from "../../integrations/github";
+import { resolveUserObjectId } from "../roles/role.helpers";
 import type { SeoBody, SeoListQuery } from "./seo.types";
 
-const CREATOR = "id fullname email mobile";
+const CREATOR = "id fullname email mobile image role";
 
 const toSeoType = (value: unknown): SeoType => {
   const type = str(value).toLowerCase();
@@ -49,6 +50,8 @@ export const seedInitialSeo = async (force = false, createdBy?: string) => {
     return { message: `SEO collection already has ${count} records. Pass force=true to re-seed.`, count };
   }
 
+  const resolvedCreatedBy = createdBy ? (await resolveUserObjectId(createdBy)) || createdBy : null;
+
   for (const item of SEO_SEED) {
     await SEO.findOneAndUpdate(
       { $or: [{ id: item.id }, { name: item.name }] },
@@ -59,12 +62,14 @@ export const seedInitialSeo = async (force = false, createdBy?: string) => {
         noindex: false,
         isActive: true,
         isDeleted: false,
-        createdBy: createdBy ?? null,
+        createdBy: resolvedCreatedBy,
       },
       { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
     );
   }
 
+  cache.invalidate("seo");
+  cache.invalidate("seo_status_counts");
   logger.info(`SEO_INITIAL_SEEDED: ${SEO_SEED.length} pages populated`);
   return { message: `Successfully seeded ${SEO_SEED.length} SEO records`, count: SEO_SEED.length };
 };
@@ -75,6 +80,8 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
   const path = str(data.path);
   if (!name) throw AppError.badRequest("Page name is required");
   if (!path) throw AppError.badRequest("URL path is required");
+
+  const resolvedCreatedBy = (await resolveUserObjectId(createdBy)) || createdBy;
 
   const existing = await SEO.findOne({ $or: [{ name }, { path }] });
   if (existing) {
@@ -88,7 +95,10 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
     if (data.type !== undefined) existing.type = toSeoType(data.type);
     if (data.noindex !== undefined) existing.noindex = toBool(data.noindex);
     if (data.breadcrumbs !== undefined) existing.set("breadcrumbs", parseBreadcrumbs(data.breadcrumbs));
+    if (resolvedCreatedBy && !existing.createdBy) existing.createdBy = resolvedCreatedBy as any;
     await existing.save();
+    cache.invalidate("seo");
+    cache.invalidate("seo_status_counts");
     logger.info(`SEO_RESTORED_AND_UPDATED: ${existing.name} (${existing.id})`);
     return existing;
   }
@@ -109,7 +119,7 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
     noindex: toBool(data.noindex),
     breadcrumbs: parseBreadcrumbs(data.breadcrumbs),
     isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
-    createdBy,
+    createdBy: resolvedCreatedBy,
   });
   cache.invalidate("seo");
   cache.invalidate("seo_status_counts");
@@ -133,6 +143,7 @@ export const getSeoList = async (query: SeoListQuery = {}) => {
 
       const [seos, total, active, inactive, trash] = await Promise.all([
         SEO.find(filter)
+          .populate("createdBy", CREATOR)
           .sort({ createdAt: 1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -196,6 +207,10 @@ export const updateSeo = async (identifier: string, data: SeoBody) => {
   if (data.breadcrumbs !== undefined) seo.set("breadcrumbs", parseBreadcrumbs(data.breadcrumbs));
   if (data.isActive !== undefined) seo.isActive = toBool(data.isActive);
   if (data.isDeleted !== undefined) seo.isDeleted = toBool(data.isDeleted);
+  if (data.createdBy && !seo.createdBy) {
+    const resolvedUser = await resolveUserObjectId(data.createdBy);
+    if (resolvedUser) seo.createdBy = resolvedUser as any;
+  }
 
   await seo.save();
   cache.invalidate("seo");
@@ -210,7 +225,7 @@ export const deleteSeo = async (identifier: string, permanent: boolean) => {
 
   cache.invalidate("seo");
   cache.invalidate("seo_status_counts");
-  if (permanent) {
+  if (permanent || seo.isDeleted) {
     await SEO.deleteOne({ _id: seo._id });
     logger.info(`SEO_PERMANENTLY_DELETED: ${seo.name} (${seo.id})`);
     return { message: "SEO configuration permanently deleted", id: seo.id };

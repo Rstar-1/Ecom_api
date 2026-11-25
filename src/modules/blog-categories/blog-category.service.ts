@@ -167,10 +167,19 @@ export const updateBlogCategory = async (identifier: string, data: BlogCategoryB
   return category.populate("createdBy", CREATOR_POPULATE);
 };
 
-export const deleteBlogCategory = async (identifier: string) => {
+export const deleteBlogCategory = async (identifier: string, permanent: boolean = false) => {
   const category = await findCategory(identifier);
   const hasBlogs = await Blog.exists({ categoryId: category._id, isDeleted: false });
   if (hasBlogs) throw AppError.badRequest("Cannot delete category with associated blogs");
+
+  if (permanent || category.isDeleted) {
+    await BlogCategory.deleteOne({ _id: category._id });
+    cache.invalidate("blog_categories");
+    cache.invalidate("blog_categories_counts");
+    cache.invalidate("blog_categories_status_counts");
+    logger.info(`BLOG_CATEGORY_PERMANENTLY_DELETED: ${category.categoryName} (${category.id})`);
+    return { deleted: true, message: "Category permanently deleted successfully" };
+  }
 
   category.isDeleted = true;
   await category.save();

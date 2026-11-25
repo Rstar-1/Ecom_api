@@ -16,6 +16,7 @@ export interface SeoBody {
   breadcrumbs?: BreadcrumbInput[] | string;
   isActive?: boolean | string;
   isDeleted?: boolean | string;
+  createdBy?: string;
 }
 
 export interface SeoListQuery extends ListQuery {

@@ -1,6 +1,6 @@
 import { HTTP_STATUS } from "../../constants";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
-import { getAuthUser, successResponse } from "../../utils";
+import { getAuthUser, successResponse, toBool } from "../../utils";
 import { resolveUserObjectId } from "../roles/role.helpers";
 import type { BlogCategoryBody, BlogCategoryListQuery } from "./blogCategory.types";
 import * as service from "./blog-category.service";
@@ -50,8 +50,9 @@ export const updateBlogCategory: ApiHandler<IdParams, BlogCategoryBody> = async 
 /* DELETE /api/blog-categories/:id */
 export const deleteBlogCategory: ApiHandler<IdParams> = async (req, res, next) => {
   try {
-    const data = await service.deleteBlogCategory(req.params.id);
-    successResponse(res, data, "Blog Category deleted");
+    const permanent = toBool(req.query?.permanent) || toBool((req.body as any)?.permanent);
+    const data = await service.deleteBlogCategory(req.params.id, permanent);
+    successResponse(res, data, permanent ? "Blog Category permanently deleted" : "Blog Category deleted");
   } catch (error) {
     next(error);
   }
