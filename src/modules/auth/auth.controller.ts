@@ -87,7 +87,7 @@ export const verifyForgotPasswordOtp: ApiHandler<EmptyParams, VerifyOtpBody> = a
 /* POST /api/auth/reset-password */
 export const resetPassword: ApiHandler<EmptyParams, ResetPasswordBody> = async (req, res, next) => {
   try {
-    const data = await service.resetPassword(req.body ?? {});
+    const data = await service.resetPassword(req.body ?? {}, req.user?.id);
     successResponse(res, data, "Password reset successfully");
   } catch (error) {
     next(error);

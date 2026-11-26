@@ -33,7 +33,7 @@ router.post("/logout", authMiddleware, logout);
 router.post("/forgot-password", forgotPassword);
 router.post("/verify-forgot-otp", verifyForgotPasswordOtp);
 router.post("/verify-forgot-password-otp", verifyForgotPasswordOtp);
-router.post("/reset-password", resetPassword);
+router.post("/reset-password", optionalAuth, resetPassword);
 
 router.get("/test", test);
 

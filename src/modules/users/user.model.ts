@@ -12,6 +12,7 @@ const userSchema = new Schema(
     isOtpVerified: { type: Boolean, default: false },
     image: { type: String, default: "" },
     address: { type: [String], default: ["", ""] },
+    social: { type: [Schema.Types.Mixed], default: [] },
     documents: { type: Schema.Types.Mixed, default: null },
     role: { type: String, trim: true, lowercase: true, default: "customer" },
     roleId: { type: Schema.Types.ObjectId, ref: "Role", required: false },

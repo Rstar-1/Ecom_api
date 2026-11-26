@@ -86,12 +86,28 @@ export const getLeads = async (query: LeadListQuery = {}) => {
 
       const paging = readPagination(query, 10, true);
       const base = Lead.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
-      const [leads, total] = await Promise.all([
+      const [leads, total, active, inactive, trash, high, medium, low] = await Promise.all([
         base.skip(paging.skip).limit(paging.limit).lean(),
         Lead.countDocuments(filter),
+        Lead.countDocuments({ isDeleted: false, isActive: true }),
+        Lead.countDocuments({ isDeleted: false, isActive: false }),
+        Lead.countDocuments({ isDeleted: true }),
+        Lead.countDocuments({ isDeleted: false, severity: "high" }),
+        Lead.countDocuments({ isDeleted: false, severity: "medium" }),
+        Lead.countDocuments({ isDeleted: false, severity: "low" }),
       ]);
 
-      return pagedResult("leads", leads, total, paging);
+      const result: any = pagedResult("leads", leads, total, paging);
+      result.counts = {
+        all: active + inactive,
+        active,
+        inactive,
+        trash,
+        high,
+        medium,
+        low,
+      };
+      return result;
     },
     30
   );

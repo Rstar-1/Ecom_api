@@ -6,7 +6,7 @@ import { Otp } from "./auth.model";
 import { Role } from "../roles/role.model";
 import { User } from "../users/user.model";
 import type { AuthUser } from "../../types/express";
-import { AppError, isObjectId, jwt, parseAddress, str, toBool } from "../../utils";
+import { AppError, isObjectId, jwt, parseAddress, parseSocial, str, toBool } from "../../utils";
 import { resolveRole, userWithRole } from "../roles/role.helpers";
 import type { ContactBody, LoginBody, RegisterBody, ResetPasswordBody, VerifyOtpBody } from "./auth.types";
 import { generateAndSendOtp, verifyOtp } from "./otp.service";
@@ -78,6 +78,7 @@ export const registerUser = async (data: RegisterBody, requester?: AuthUser) => 
     isOtpVerified,
     image: data.image ?? "",
     address: parseAddress(data.address),
+    social: parseSocial(data.social),
     documents: data.documents ?? null,
   });
 
@@ -205,8 +206,33 @@ export const verifyForgotPasswordOtp = async (body: VerifyOtpBody) => {
 };
 
 /* ================= RESET PASSWORD ================= */
-export const resetPassword = async (body: ResetPasswordBody) => {
+export const resetPassword = async (
+  body: ResetPasswordBody & { id?: string; userId?: string; currentPassword?: string },
+  authUserId?: string
+) => {
   if (!body.password) throw AppError.badRequest("New password is required");
+
+  const targetId = authUserId || body.id || body.userId;
+  if (targetId) {
+    const idFilter = isObjectId(targetId) ? { _id: targetId } : { id: targetId };
+    const user = await User.findOne({ ...idFilter, isDeleted: false }).select("+password");
+    if (user) {
+      if (!body.currentPassword) {
+        throw AppError.badRequest("Current password is required");
+      }
+      if (!user.password) {
+        throw AppError.badRequest("User password not set");
+      }
+      const isMatch = await bcrypt.compare(body.currentPassword, user.password);
+      if (!isMatch) {
+        throw AppError.badRequest("Current password does not match");
+      }
+      user.password = body.password; // hashed by pre-save hook
+      await user.save();
+      return { message: "Password updated successfully" };
+    }
+  }
+
   const { email, mobile } = normalizeContact(body);
   if (!email && !mobile) throw AppError.badRequest("Email or mobile is required");
 
@@ -218,7 +244,25 @@ export const resetPassword = async (body: ResetPasswordBody) => {
     expiresAt: { $gt: new Date() },
     ...contact,
   });
-  if (!otpRecord) throw AppError.badRequest("OTP verification required or OTP expired");
+  if (!otpRecord) {
+    const user = await User.findOne({ isDeleted: false, ...contact }).select("+password");
+    if (user) {
+      if (!body.currentPassword) {
+        throw AppError.badRequest("Current password or OTP verification is required");
+      }
+      if (!user.password) {
+        throw AppError.badRequest("User password not set");
+      }
+      const isMatch = await bcrypt.compare(body.currentPassword, user.password);
+      if (!isMatch) {
+        throw AppError.badRequest("Current password does not match");
+      }
+      user.password = body.password; // hashed by pre-save hook
+      await user.save();
+      return { message: "Password updated successfully" };
+    }
+    throw AppError.badRequest("OTP verification required or OTP expired");
+  }
 
   const user = await User.findOne({ isDeleted: false, ...contact });
   if (!user) throw AppError.notFound(messages.USER_NOT_FOUND);

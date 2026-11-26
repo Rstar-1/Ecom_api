@@ -11,6 +11,7 @@ export interface RegisterBody {
   image?: string;
   /** Array or JSON string (multipart) */
   address?: unknown;
+  social?: unknown;
   documents?: Record<string, string | undefined> | null;
   /** Only honoured when an authorised user creates the account */
   isOtpVerified?: boolean | string;
@@ -36,6 +37,9 @@ export interface ContactBody {
 
 export interface ResetPasswordBody extends ContactBody {
   password?: string;
+  currentPassword?: string;
+  id?: string;
+  userId?: string;
 }
 
 export interface OtpTarget {

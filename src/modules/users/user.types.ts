@@ -14,6 +14,7 @@ export interface UpdateUserBody {
   image?: string;
   password?: string;
   address?: unknown;
+  social?: unknown;
   documents?: Record<string, string | undefined> | null;
   roleId?: string;
   rolename?: string;

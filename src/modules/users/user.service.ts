@@ -14,6 +14,7 @@ import {
   mergeObjects,
   pagedResult,
   parseAddress,
+  parseSocial,
   readBulkIds,
   readPagination,
   searchFilter,
@@ -82,6 +83,7 @@ export const updateUser = async (identifier: string, data: UpdateUserBody) => {
   if (data.image !== undefined) user.image = data.image;
   if (data.password) user.password = data.password; // hashed by pre-save hook
   if (data.address !== undefined) user.set("address", parseAddress(data.address));
+  if (data.social !== undefined) user.set("social", parseSocial(data.social));
 
   if (data.documents !== undefined) {
     const current: unknown = user.get("documents");

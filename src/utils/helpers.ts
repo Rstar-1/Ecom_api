@@ -68,22 +68,77 @@ export const parseList = <T = string>(field: unknown): T[] => {
 };
 
 export const parseAddress = (address: unknown): string[] => {
-  if (!address) return ["", ""];
+  if (!address) return [];
   if (typeof address === "string") {
     try {
       const parsed: unknown = JSON.parse(address);
-      if (Array.isArray(parsed)) return parsed.map(String);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((a: unknown) =>
+            typeof a === "object" && a !== null
+              ? Object.values(a).map(String).map((s) => s.trim()).filter(Boolean).join(", ")
+              : String(a).trim()
+          )
+          .filter(Boolean);
+      }
     } catch {}
-    return [address, ""];
+    const trimmed = address.trim();
+    return trimmed ? [trimmed] : [];
   }
   if (Array.isArray(address)) {
-    return address.map((a: unknown) =>
-      typeof a === "object" && a !== null
-        ? Object.values(a).filter(Boolean).join(", ")
-        : String(a)
-    );
+    return address
+      .map((a: unknown) =>
+        typeof a === "object" && a !== null
+          ? Object.values(a).map(String).map((s) => s.trim()).filter(Boolean).join(", ")
+          : String(a).trim()
+      )
+      .filter(Boolean);
   }
-  return ["", ""];
+  return [];
+};
+
+export const parseSocial = (social: unknown): Record<string, string>[] => {
+  if (!social) return [];
+  let raw = social;
+  if (typeof social === "string") {
+    try {
+      raw = JSON.parse(social);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item: unknown) => {
+        if (!item || typeof item !== "object") return null;
+        const obj = item as Record<string, unknown>;
+        if ("field" in obj && "value" in obj) {
+          const k = String(obj.field || "").trim();
+          const v = String(obj.value || "").trim();
+          return k ? { [k]: v } : null;
+        }
+        const entries = Object.entries(obj);
+        const firstEntry = entries[0];
+        if (firstEntry) {
+          const [k, v] = firstEntry;
+          const cleanK = String(k || "").trim();
+          const cleanV = String(v ?? "").trim();
+          return cleanK ? { [cleanK]: cleanV } : null;
+        }
+        return null;
+      })
+      .filter(Boolean) as Record<string, string>[];
+  }
+  if (typeof raw === "object" && raw !== null) {
+    return Object.entries(raw as Record<string, unknown>)
+      .map(([k, v]) => {
+        const cleanK = String(k || "").trim();
+        const cleanV = String(v ?? "").trim();
+        return cleanK ? { [cleanK]: cleanV } : null;
+      })
+      .filter(Boolean) as Record<string, string>[];
+  }
+  return [];
 };
 
 export const parseJsonObject = <T extends object>(value: unknown): T | null => {
