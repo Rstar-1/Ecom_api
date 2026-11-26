@@ -34,7 +34,7 @@ const invalidateProductCaches = () => {
   cache.invalidate("categories_counts");
   cache.invalidate("categories_status_counts");
 };
-import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { ProductBody, ProductListQuery } from "./product.types";
 
@@ -141,6 +141,17 @@ export const getProducts = async (query: ProductListQuery = {}) => {
         ...searchFilter(query.search, ["id", "productName", "shortDesc", "description"]),
       };
 
+      const creatorScope = await getCreatorOrAdminFilter(query.userId || query.createdBy);
+      if (creatorScope) {
+        if (filter.$or) {
+          const searchOr = filter.$or;
+          delete filter.$or;
+          filter.$and = [{ $or: searchOr }, creatorScope];
+        } else {
+          Object.assign(filter, creatorScope);
+        }
+      }
+
       if (query.categoryId) {
         if (isObjectId(query.categoryId)) filter.categoryId = new mongoose.Types.ObjectId(query.categoryId);
         else {
@@ -152,12 +163,11 @@ export const getProducts = async (query: ProductListQuery = {}) => {
       if (query.isTrending !== undefined) filter.isTrending = toBool(query.isTrending);
       if (query.stockStatus !== undefined) filter.stockStatus = toBool(query.stockStatus);
 
-      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
-      if (Object.keys(creatorFilter).length) {
-        Object.assign(filter, creatorFilter);
-      }
-
       const paging = readPagination(query, 10, true);
+
+      const activeFilter: Filter = { isDeleted: false, isActive: true, ...(creatorScope ? creatorScope : {}) };
+      const inactiveFilter: Filter = { isDeleted: false, isActive: false, ...(creatorScope ? creatorScope : {}) };
+      const trashFilter: Filter = { isDeleted: true, ...(creatorScope ? creatorScope : {}) };
 
       const [products, total, active, inactive, trash] = await Promise.all([
         Product.find(filter)
@@ -169,9 +179,9 @@ export const getProducts = async (query: ProductListQuery = {}) => {
           .limit(paging.limit)
           .lean(),
         Product.countDocuments(filter),
-        Product.countDocuments({ ...filter, isDeleted: false, isActive: true }),
-        Product.countDocuments({ ...filter, isDeleted: false, isActive: false }),
-        Product.countDocuments({ ...filter, isDeleted: true }),
+        Product.countDocuments(activeFilter),
+        Product.countDocuments(inactiveFilter),
+        Product.countDocuments(trashFilter),
       ]);
 
       const result: any = pagedResult("products", products, total, paging);

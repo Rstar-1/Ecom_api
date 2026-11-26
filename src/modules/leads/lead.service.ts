@@ -1,10 +1,12 @@
-import { LEAD_SEVERITIES, Lead, type LeadSeverity } from "./lead.model";
+import mongoose from "mongoose";
+import { LEAD_CATEGORIES, LEAD_SEVERITIES, Lead, type LeadSeverity, type LeadCategory } from "./lead.model";
 import {
   AppError,
   baseListFilter,
   bulkFilter,
   cache,
   identifierFilter,
+  isObjectId,
   isPermanent,
   logger,
   pagedResult,
@@ -15,7 +17,7 @@ import {
   toBool,
   type Filter,
 } from "../../utils";
-import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
 import type { LeadBody, LeadListQuery } from "./lead.types";
 
 const isSeverity = (value: string): value is LeadSeverity => (LEAD_SEVERITIES as readonly string[]).includes(value);
@@ -52,9 +54,20 @@ export const createLead = async (data: LeadBody, createdBy?: string) => {
 
   const severity = str(data.severity).toLowerCase();
   const notes = str(f.notes);
+  const rawCat = str(data.category).toLowerCase();
+  const category: LeadCategory = (LEAD_CATEGORIES as readonly string[]).includes(rawCat) ? (rawCat as LeadCategory) : "enquiry";
 
-  const lead = await Lead.create({
+  let products: mongoose.Types.ObjectId[] = [];
+  if (Array.isArray(data.products)) {
+    products = data.products.filter(isObjectId).map((id) => new mongoose.Types.ObjectId(id));
+  } else if (typeof data.products === "string" && isObjectId(data.products)) {
+    products = [new mongoose.Types.ObjectId(data.products)];
+  }
+
+  const lead = new Lead({
     ...(str(data.id) ? { id: str(data.id) } : {}),
+    category,
+    products,
     name,
     mobile,
     email: str(f.email).toLowerCase(),
@@ -63,10 +76,12 @@ export const createLead = async (data: LeadBody, createdBy?: string) => {
     notes,
     severity: isSeverity(severity) ? severity : "low",
     isActive: f.active !== undefined ? toBool(f.active) : true,
-    createdBy: createdBy ?? null,
+    createdBy: createdBy && isObjectId(createdBy) ? new mongoose.Types.ObjectId(createdBy) : null,
   });
+  await lead.save();
 
   if (lead.createdBy) await lead.populate("createdBy", CREATOR_POPULATE);
+  if (lead.products?.length) await lead.populate("products", "id productName price image");
   cache.invalidate("leads");
   logger.info(`LEAD_CREATED: ${lead.name} (${lead.id})`);
   return lead;
@@ -84,22 +99,39 @@ export const getLeads = async (query: LeadListQuery = {}) => {
       };
       if (query.severity) filter.severity = str(query.severity).toLowerCase();
 
-      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
-      if (Object.keys(creatorFilter).length) {
-        Object.assign(filter, creatorFilter);
+      const creatorScope = await getCreatorOrAdminFilter(query.userId || query.createdBy);
+      if (creatorScope) {
+        if (filter.$or) {
+          const searchOr = filter.$or;
+          delete filter.$or;
+          filter.$and = [{ $or: searchOr }, creatorScope];
+        } else {
+          Object.assign(filter, creatorScope);
+        }
       }
 
       const paging = readPagination(query, 10, true);
-      const base = Lead.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
+      const base = Lead.find(filter)
+        .populate("createdBy", CREATOR_POPULATE)
+        .populate("products", "id productName price image")
+        .sort({ createdAt: -1 });
+
+      const activeFilter: Filter = { isDeleted: false, isActive: true, ...(creatorScope ? creatorScope : {}) };
+      const inactiveFilter: Filter = { isDeleted: false, isActive: false, ...(creatorScope ? creatorScope : {}) };
+      const trashFilter: Filter = { isDeleted: true, ...(creatorScope ? creatorScope : {}) };
+      const highFilter: Filter = { isDeleted: false, severity: "high", ...(creatorScope ? creatorScope : {}) };
+      const mediumFilter: Filter = { isDeleted: false, severity: "medium", ...(creatorScope ? creatorScope : {}) };
+      const lowFilter: Filter = { isDeleted: false, severity: "low", ...(creatorScope ? creatorScope : {}) };
+
       const [leads, total, active, inactive, trash, high, medium, low] = await Promise.all([
         base.skip(paging.skip).limit(paging.limit).lean(),
         Lead.countDocuments(filter),
-        Lead.countDocuments({ ...filter, isDeleted: false, isActive: true }),
-        Lead.countDocuments({ ...filter, isDeleted: false, isActive: false }),
-        Lead.countDocuments({ ...filter, isDeleted: true }),
-        Lead.countDocuments({ ...filter, isDeleted: false, severity: "high" }),
-        Lead.countDocuments({ ...filter, isDeleted: false, severity: "medium" }),
-        Lead.countDocuments({ ...filter, isDeleted: false, severity: "low" }),
+        Lead.countDocuments(activeFilter),
+        Lead.countDocuments(inactiveFilter),
+        Lead.countDocuments(trashFilter),
+        Lead.countDocuments(highFilter),
+        Lead.countDocuments(mediumFilter),
+        Lead.countDocuments(lowFilter),
       ]);
 
       const result: any = pagedResult("leads", leads, total, paging);
@@ -120,12 +152,31 @@ export const getLeads = async (query: LeadListQuery = {}) => {
 
 /* ================= GET ONE (Mongo _id, LED-001, mobile or email) ================= */
 export const getLeadById = async (identifier: string) =>
-  (await findLead(identifier)).populate("createdBy", CREATOR_POPULATE);
+  (await findLead(identifier)).populate([
+    { path: "createdBy", select: CREATOR_POPULATE },
+    { path: "products", select: "id productName price image" },
+  ]);
 
 /* ================= UPDATE ================= */
 export const updateLead = async (identifier: string, data: LeadBody) => {
   const lead = await findLead(identifier);
   const f = fields(data);
+
+  if (data.category !== undefined) {
+    const rawCat = str(data.category).toLowerCase();
+    if ((LEAD_CATEGORIES as readonly string[]).includes(rawCat as any)) {
+      lead.set("category", rawCat);
+    }
+  }
+  if (data.products !== undefined) {
+    let products: any[] = [];
+    if (Array.isArray(data.products)) {
+      products = data.products.filter(isObjectId).map((id) => new mongoose.Types.ObjectId(id));
+    } else if (typeof data.products === "string" && isObjectId(data.products)) {
+      products = [new mongoose.Types.ObjectId(data.products)];
+    }
+    lead.set("products", products);
+  }
 
   if (f.name !== undefined) lead.name = str(f.name);
   if (f.mobile !== undefined) lead.mobile = str(f.mobile);
@@ -145,6 +196,7 @@ export const updateLead = async (identifier: string, data: LeadBody) => {
   await lead.save();
   cache.invalidate("leads");
   if (lead.createdBy) await lead.populate("createdBy", CREATOR_POPULATE);
+  if (lead.products?.length) await lead.populate("products", "id productName price image");
   logger.info(`LEAD_UPDATED: ${lead.name} (${lead.id})`);
   return lead;
 };

@@ -19,7 +19,7 @@ import {
 } from "../../utils";
 import { SEO_SEED, SEO_SEED_IMAGE } from "./seo.seed";
 import { uploadBase64ToGitHub } from "../../integrations/github";
-import { CREATOR_POPULATE, getRoleBasedCreatorFilter, resolveUserObjectId } from "../roles/role.helpers";
+import { resolveUserObjectId, getCreatorOrAdminFilter } from "../roles/role.helpers";
 import type { SeoBody, SeoListQuery } from "./seo.types";
 
 const CREATOR = "id fullname email mobile image role";
@@ -139,24 +139,34 @@ export const getSeoList = async (query: SeoListQuery = {}) => {
       };
       if (query.type) filter.type = str(query.type).toLowerCase();
 
-      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
-      if (Object.keys(creatorFilter).length) {
-        Object.assign(filter, creatorFilter);
+      const creatorScope = await getCreatorOrAdminFilter(query.userId || query.createdBy);
+      if (creatorScope) {
+        if (filter.$or) {
+          const searchOr = filter.$or;
+          delete filter.$or;
+          filter.$and = [{ $or: searchOr }, creatorScope];
+        } else {
+          Object.assign(filter, creatorScope);
+        }
       }
 
       const paging = readPagination(query, 20, true);
 
+      const activeFilter: Filter = { isDeleted: false, isActive: true, ...(creatorScope ? creatorScope : {}) };
+      const inactiveFilter: Filter = { isDeleted: false, isActive: false, ...(creatorScope ? creatorScope : {}) };
+      const trashFilter: Filter = { isDeleted: true, ...(creatorScope ? creatorScope : {}) };
+
       const [seos, total, active, inactive, trash] = await Promise.all([
         SEO.find(filter)
-          .populate("createdBy", CREATOR_POPULATE)
+          .populate("createdBy", CREATOR)
           .sort({ createdAt: 1 })
           .skip(paging.skip)
           .limit(paging.limit)
           .lean(),
         SEO.countDocuments(filter),
-        SEO.countDocuments({ ...filter, isDeleted: false, isActive: true }),
-        SEO.countDocuments({ ...filter, isDeleted: false, isActive: false }),
-        SEO.countDocuments({ ...filter, isDeleted: true }),
+        SEO.countDocuments(activeFilter),
+        SEO.countDocuments(inactiveFilter),
+        SEO.countDocuments(trashFilter),
       ]);
 
       const result: any = pagedResult("seos", seos, total, paging);

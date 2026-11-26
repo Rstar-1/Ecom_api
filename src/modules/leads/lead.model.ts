@@ -5,11 +5,25 @@ import { aliasVirtual, withVirtuals } from "../../utils";
 export const LEAD_SEVERITIES = ["high", "medium", "low"] as const;
 export type LeadSeverity = (typeof LEAD_SEVERITIES)[number];
 
+export const LEAD_CATEGORIES = ["product", "enquiry", "manual"] as const;
+export type LeadCategory = (typeof LEAD_CATEGORIES)[number];
+
 const leadSchema = new Schema(
   {
     id: { type: String, required: true, unique: true, trim: true }, // LED-001
-    name: { type: String, required: true, trim: true },
-    mobile: { type: String, required: true, trim: true },
+    category: {
+      type: String,
+      enum: LEAD_CATEGORIES,
+      default: "enquiry",
+      lowercase: true,
+      trim: true,
+    },
+    products: {
+      type: [{ type: Schema.Types.ObjectId, ref: "Product" }],
+      default: [],
+    },
+    name: { type: String, default: "", trim: true },
+    mobile: { type: String, default: "", trim: true },
     email: { type: String, default: "", trim: true, lowercase: true },
     location: { type: String, default: "", trim: true },
     description: { type: String, default: "", trim: true },

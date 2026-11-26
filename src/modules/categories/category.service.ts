@@ -19,7 +19,7 @@ import {
   toNumber,
   type Filter,
 } from "../../utils";
-import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { CategoryBody, CategoryListQuery } from "./category.types";
 
@@ -133,11 +133,22 @@ export const getCategories = async (query: CategoryListQuery = {}) => {
     query as Record<string, unknown>,
     async () => {
       const filter: Filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "categoryName", "description"]) };
-      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
-      if (Object.keys(creatorFilter).length) {
-        Object.assign(filter, creatorFilter);
+      const creatorScope = await getCreatorOrAdminFilter(query.userId || query.createdBy);
+      if (creatorScope) {
+        if (filter.$or) {
+          const searchOr = filter.$or;
+          delete filter.$or;
+          filter.$and = [{ $or: searchOr }, creatorScope];
+        } else {
+          Object.assign(filter, creatorScope);
+        }
       }
+
       const paging = readPagination(query, 10, true);
+
+      const activeFilter: Filter = { isDeleted: false, isActive: true, ...(creatorScope ? creatorScope : {}) };
+      const inactiveFilter: Filter = { isDeleted: false, isActive: false, ...(creatorScope ? creatorScope : {}) };
+      const trashFilter: Filter = { isDeleted: true, ...(creatorScope ? creatorScope : {}) };
 
       const [categories, total, active, inactive, trash] = await Promise.all([
         ProductCategory.find(filter)
@@ -148,9 +159,9 @@ export const getCategories = async (query: CategoryListQuery = {}) => {
           .limit(paging.limit)
           .lean(),
         ProductCategory.countDocuments(filter),
-        ProductCategory.countDocuments({ ...filter, isDeleted: false, isActive: true }),
-        ProductCategory.countDocuments({ ...filter, isDeleted: false, isActive: false }),
-        ProductCategory.countDocuments({ ...filter, isDeleted: true }),
+        ProductCategory.countDocuments(activeFilter),
+        ProductCategory.countDocuments(inactiveFilter),
+        ProductCategory.countDocuments(trashFilter),
       ]);
 
       const result: any = pagedResult("categories", categories, total, paging);

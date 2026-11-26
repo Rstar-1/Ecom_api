@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { roles } from "../../constants";
 import { Role, type RoleDocument } from "./role.model";
 import { User, type UserDocument } from "../users/user.model";
-import { isObjectId, str } from "../../utils";
+import { isObjectId, str, type Filter } from "../../utils";
 
 /** Roles anyone may pick when signing up without being logged in as an admin (all supported). */
 export const PUBLIC_SIGNUP_ROLES: readonly string[] = [
@@ -101,106 +101,77 @@ export const resolveUserObjectId = async (identifier: unknown): Promise<string |
 };
 
 /**
- * Role-based Creator filter:
- * - If user is Admin, Dev Admin, or has Full_Access, no filter is applied (sees all data across all roles).
- * - If user has any other custom role, only sees their own added data + admin-added data.
+ * Resolves creator-or-admin filter for role-based scoping:
+ * If the user is NOT an admin, they can ONLY see:
+ * 1) Items they created (createdBy: userId)
+ * 2) Items created by any Admin user (createdBy: { $in: adminUserIds })
+ * 3) Default / system-seeded items (createdBy: null or doesn't exist)
+ * If the user IS an admin (or no userId provided), returns null (no restriction).
  */
-export const getRoleBasedCreatorFilter = async (identifier?: unknown): Promise<Record<string, unknown>> => {
-  if (!identifier) return {};
-  const strId = String(identifier).trim();
-  if (!strId) return {};
+export const getCreatorOrAdminFilter = async (
+  userIdOrIdentifier?: unknown
+): Promise<Filter | null> => {
+  if (!userIdOrIdentifier) return null;
+  const userObjectId = await resolveUserObjectId(userIdOrIdentifier);
+  if (!userObjectId) return null;
 
-  try {
-    const isHex = /^[a-f\d]{24}$/i.test(strId);
-    const targetUser = await User.findOne({
-      $or: [
-        ...(isHex ? [{ _id: new mongoose.Types.ObjectId(strId) }] : []),
-        { id: strId },
-        { email: strId.toLowerCase() },
-        { mobile: strId },
-      ],
-    })
-      .select("_id id role roleId")
-      .populate("roleId", "rolename permissions pages")
-      .lean();
-
-    if (!targetUser) return {};
-
+  // Check if requesting user is Admin
+  const requestingUser = await User.findById(userObjectId).populate("roleId").lean();
+  if (requestingUser) {
     const roleName = String(
-      (targetUser as any).roleId?.rolename || (targetUser as any).role || ""
-    )
-      .toLowerCase()
-      .trim();
-
-    const permissions: string[] = Array.isArray((targetUser as any).roleId?.permissions)
-      ? (targetUser as any).roleId.permissions
-      : [];
-    const isFullAccess =
-      permissions.includes("Full_Access") ||
-      permissions.includes("*") ||
+      (requestingUser.roleId as any)?.rolename ||
+      (requestingUser.roleId as any)?.name ||
+      requestingUser.role ||
+      ""
+    ).toLowerCase().trim();
+    const permissions = (requestingUser.roleId as any)?.permissions || [];
+    if (
       roleName === "admin" ||
-      roleName.includes("admin") ||
-      roleName === "dev admin" ||
       roleName === "dev_admin" ||
       roleName === "devadmin" ||
-      roleName === "super admin" ||
-      roleName === "super_admin";
-
-    // Admin, Dev Admin, and Full_Access roles see all data across all roles
-    if (isFullAccess) {
-      return {};
+      roleName === "dev admin" ||
+      roleName.includes("admin") ||
+      (Array.isArray(permissions) && (permissions.includes("Full_Access") || permissions.includes("*")))
+    ) {
+      return null; // Admin sees all data
     }
-
-    // Find all Admin / Dev Admin / Full_Access roles in the system
-    const adminRoles = await Role.find({
-      $or: [
-        { rolename: { $in: ["admin", "dev admin", "dev_admin", "devadmin", "super admin", "super_admin"] } },
-        { permissions: { $in: ["Full_Access", "*"] } },
-      ],
-      isDeleted: false,
-    }).select("_id");
-    const adminRoleIds = adminRoles.map((r) => r._id);
-
-    // Find all Admin / Dev Admin users in the system
-    const adminUsers = await User.find({
-      $or: [
-        { role: { $in: ["admin", "dev admin", "dev_admin", "devadmin", "super admin", "super_admin"] } },
-        { roleId: { $in: adminRoleIds } },
-      ],
-      isDeleted: false,
-    })
-      .select("_id")
-      .lean();
-
-    const rawIds = [targetUser._id, ...adminUsers.map((u) => u._id)].filter(Boolean);
-    const allowedObjectIds: mongoose.Types.ObjectId[] = [];
-    const seen = new Set<string>();
-
-    for (const raw of rawIds) {
-      const s = String(raw);
-      if (/^[a-f\d]{24}$/i.test(s) && !seen.has(s)) {
-        seen.add(s);
-        allowedObjectIds.push(new mongoose.Types.ObjectId(s));
-      }
-    }
-
-    if (!allowedObjectIds.length) {
-      return {
-        $or: [
-          { createdBy: null },
-          { createdBy: { $exists: false } },
-        ],
-      };
-    }
-
-    return {
-      $or: [
-        { createdBy: { $in: allowedObjectIds } },
-        { createdBy: null },
-        { createdBy: { $exists: false } },
-      ],
-    };
-  } catch {
-    return {};
   }
+
+  // Find all Admin role IDs
+  const adminRoles = await Role.find({
+    $or: [
+      { rolename: { $in: ["admin", "dev_admin", "devadmin", "dev admin", "administrator"] } },
+      { name: { $in: ["admin", "dev_admin", "devadmin", "dev admin", "administrator"] } },
+      { permissions: { $in: ["Full_Access", "*"] } },
+    ],
+  }).select("_id").lean();
+  const adminRoleIds = adminRoles.map((r) => r._id);
+
+  // Find all Admin user ObjectIds
+  const adminUsers = await User.find({
+    $or: [
+      { role: { $in: ["admin", "dev_admin", "devadmin", "dev admin", "administrator"] } },
+      { roleId: { $in: adminRoleIds } },
+    ],
+  }).select("_id").lean();
+
+  const allowedObjectIds: mongoose.Types.ObjectId[] = [];
+  if (userObjectId && mongoose.Types.ObjectId.isValid(userObjectId)) {
+    allowedObjectIds.push(new mongoose.Types.ObjectId(userObjectId));
+  }
+
+  for (const u of adminUsers) {
+    const rawId = (u as any)?._id;
+    if (rawId && mongoose.Types.ObjectId.isValid(String(rawId))) {
+      allowedObjectIds.push(rawId instanceof mongoose.Types.ObjectId ? rawId : new mongoose.Types.ObjectId(String(rawId)));
+    }
+  }
+
+  return {
+    $or: [
+      { createdBy: { $in: allowedObjectIds } },
+      { createdBy: null },
+      { createdBy: { $exists: false } },
+    ],
+  };
 };

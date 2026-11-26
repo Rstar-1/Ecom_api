@@ -3,6 +3,8 @@ import type { ListQuery } from "../../utils";
 /** Accepts both API field names and the dashboard/website form names. */
 export interface LeadBody {
   id?: string;
+  category?: string;
+  products?: string[] | unknown;
   name?: string;
   leadFullName?: string;
   fullName?: string;
@@ -28,6 +30,7 @@ export interface LeadBody {
 export interface LeadListQuery extends ListQuery {
   publishedStatus?: string;
   severity?: string;
+  category?: string;
 }
 
 export interface DeleteQuery {

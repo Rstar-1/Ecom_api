@@ -29,7 +29,7 @@ const invalidateBlogCaches = () => {
   cache.invalidate("blog_categories_counts");
   cache.invalidate("blog_categories_status_counts");
 };
-import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { BlogBody, BlogListQuery } from "./blog.types";
 
@@ -112,6 +112,17 @@ export const getBlogs = async (query: BlogListQuery = {}) => {
         ...searchFilter(query.search, ["id", "blogName", "description", "shortDesc"]),
       };
 
+      const creatorScope = await getCreatorOrAdminFilter(query.userId || query.createdBy);
+      if (creatorScope) {
+        if (filter.$or) {
+          const searchOr = filter.$or;
+          delete filter.$or;
+          filter.$and = [{ $or: searchOr }, creatorScope];
+        } else {
+          Object.assign(filter, creatorScope);
+        }
+      }
+
       if (query.categoryId) {
         if (isObjectId(query.categoryId)) filter.categoryId = new mongoose.Types.ObjectId(query.categoryId);
         else {
@@ -120,12 +131,11 @@ export const getBlogs = async (query: BlogListQuery = {}) => {
         }
       }
 
-      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
-      if (Object.keys(creatorFilter).length) {
-        Object.assign(filter, creatorFilter);
-      }
-
       const paging = readPagination(query, 20, true);
+
+      const activeFilter: Filter = { isDeleted: false, isActive: true, ...(creatorScope ? creatorScope : {}) };
+      const inactiveFilter: Filter = { isDeleted: false, isActive: false, ...(creatorScope ? creatorScope : {}) };
+      const trashFilter: Filter = { isDeleted: true, ...(creatorScope ? creatorScope : {}) };
 
       const [blogs, total, active, inactive, trash] = await Promise.all([
         Blog.find(filter)
@@ -137,9 +147,9 @@ export const getBlogs = async (query: BlogListQuery = {}) => {
           .limit(paging.limit)
           .lean(),
         Blog.countDocuments(filter),
-        Blog.countDocuments({ ...filter, isDeleted: false, isActive: true }),
-        Blog.countDocuments({ ...filter, isDeleted: false, isActive: false }),
-        Blog.countDocuments({ ...filter, isDeleted: true }),
+        Blog.countDocuments(activeFilter),
+        Blog.countDocuments(inactiveFilter),
+        Blog.countDocuments(trashFilter),
       ]);
 
       const result: any = pagedResult("blogs", blogs, total, paging);
