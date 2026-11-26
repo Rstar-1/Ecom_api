@@ -166,6 +166,8 @@ export interface ListQuery {
   search?: string;
   isDeleted?: string | boolean;
   isActive?: string | boolean;
+  userId?: string;
+  createdBy?: string;
 }
 
 export const baseListFilter = (

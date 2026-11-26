@@ -15,7 +15,7 @@ import {
   toBool,
   type Filter,
 } from "../../utils";
-import { CREATOR_POPULATE } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
 import type { LeadBody, LeadListQuery } from "./lead.types";
 
 const isSeverity = (value: string): value is LeadSeverity => (LEAD_SEVERITIES as readonly string[]).includes(value);
@@ -84,17 +84,22 @@ export const getLeads = async (query: LeadListQuery = {}) => {
       };
       if (query.severity) filter.severity = str(query.severity).toLowerCase();
 
+      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
+      if (Object.keys(creatorFilter).length) {
+        Object.assign(filter, creatorFilter);
+      }
+
       const paging = readPagination(query, 10, true);
       const base = Lead.find(filter).populate("createdBy", CREATOR_POPULATE).sort({ createdAt: -1 });
       const [leads, total, active, inactive, trash, high, medium, low] = await Promise.all([
         base.skip(paging.skip).limit(paging.limit).lean(),
         Lead.countDocuments(filter),
-        Lead.countDocuments({ isDeleted: false, isActive: true }),
-        Lead.countDocuments({ isDeleted: false, isActive: false }),
-        Lead.countDocuments({ isDeleted: true }),
-        Lead.countDocuments({ isDeleted: false, severity: "high" }),
-        Lead.countDocuments({ isDeleted: false, severity: "medium" }),
-        Lead.countDocuments({ isDeleted: false, severity: "low" }),
+        Lead.countDocuments({ ...filter, isDeleted: false, isActive: true }),
+        Lead.countDocuments({ ...filter, isDeleted: false, isActive: false }),
+        Lead.countDocuments({ ...filter, isDeleted: true }),
+        Lead.countDocuments({ ...filter, isDeleted: false, severity: "high" }),
+        Lead.countDocuments({ ...filter, isDeleted: false, severity: "medium" }),
+        Lead.countDocuments({ ...filter, isDeleted: false, severity: "low" }),
       ]);
 
       const result: any = pagedResult("leads", leads, total, paging);

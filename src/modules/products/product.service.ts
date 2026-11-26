@@ -34,7 +34,7 @@ const invalidateProductCaches = () => {
   cache.invalidate("categories_counts");
   cache.invalidate("categories_status_counts");
 };
-import { CREATOR_POPULATE } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { ProductBody, ProductListQuery } from "./product.types";
 
@@ -152,6 +152,11 @@ export const getProducts = async (query: ProductListQuery = {}) => {
       if (query.isTrending !== undefined) filter.isTrending = toBool(query.isTrending);
       if (query.stockStatus !== undefined) filter.stockStatus = toBool(query.stockStatus);
 
+      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
+      if (Object.keys(creatorFilter).length) {
+        Object.assign(filter, creatorFilter);
+      }
+
       const paging = readPagination(query, 10, true);
 
       const [products, total, active, inactive, trash] = await Promise.all([
@@ -164,9 +169,9 @@ export const getProducts = async (query: ProductListQuery = {}) => {
           .limit(paging.limit)
           .lean(),
         Product.countDocuments(filter),
-        Product.countDocuments({ isDeleted: false, isActive: true }),
-        Product.countDocuments({ isDeleted: false, isActive: false }),
-        Product.countDocuments({ isDeleted: true }),
+        Product.countDocuments({ ...filter, isDeleted: false, isActive: true }),
+        Product.countDocuments({ ...filter, isDeleted: false, isActive: false }),
+        Product.countDocuments({ ...filter, isDeleted: true }),
       ]);
 
       const result: any = pagedResult("products", products, total, paging);

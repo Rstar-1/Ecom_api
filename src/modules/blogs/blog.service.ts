@@ -29,7 +29,7 @@ const invalidateBlogCaches = () => {
   cache.invalidate("blog_categories_counts");
   cache.invalidate("blog_categories_status_counts");
 };
-import { CREATOR_POPULATE } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { BlogBody, BlogListQuery } from "./blog.types";
 
@@ -120,6 +120,11 @@ export const getBlogs = async (query: BlogListQuery = {}) => {
         }
       }
 
+      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
+      if (Object.keys(creatorFilter).length) {
+        Object.assign(filter, creatorFilter);
+      }
+
       const paging = readPagination(query, 20, true);
 
       const [blogs, total, active, inactive, trash] = await Promise.all([
@@ -132,9 +137,9 @@ export const getBlogs = async (query: BlogListQuery = {}) => {
           .limit(paging.limit)
           .lean(),
         Blog.countDocuments(filter),
-        Blog.countDocuments({ isDeleted: false, isActive: true }),
-        Blog.countDocuments({ isDeleted: false, isActive: false }),
-        Blog.countDocuments({ isDeleted: true }),
+        Blog.countDocuments({ ...filter, isDeleted: false, isActive: true }),
+        Blog.countDocuments({ ...filter, isDeleted: false, isActive: false }),
+        Blog.countDocuments({ ...filter, isDeleted: true }),
       ]);
 
       const result: any = pagedResult("blogs", blogs, total, paging);

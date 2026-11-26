@@ -17,8 +17,9 @@ import {
   str,
   toBool,
   toNumber,
+  type Filter,
 } from "../../utils";
-import { CREATOR_POPULATE } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { CategoryBody, CategoryListQuery } from "./category.types";
 
@@ -131,7 +132,11 @@ export const getCategories = async (query: CategoryListQuery = {}) => {
     "categories",
     query as Record<string, unknown>,
     async () => {
-      const filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "categoryName", "description"]) };
+      const filter: Filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "categoryName", "description"]) };
+      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
+      if (Object.keys(creatorFilter).length) {
+        Object.assign(filter, creatorFilter);
+      }
       const paging = readPagination(query, 10, true);
 
       const [categories, total, active, inactive, trash] = await Promise.all([
@@ -143,9 +148,9 @@ export const getCategories = async (query: CategoryListQuery = {}) => {
           .limit(paging.limit)
           .lean(),
         ProductCategory.countDocuments(filter),
-        ProductCategory.countDocuments({ isDeleted: false, isActive: true }),
-        ProductCategory.countDocuments({ isDeleted: false, isActive: false }),
-        ProductCategory.countDocuments({ isDeleted: true }),
+        ProductCategory.countDocuments({ ...filter, isDeleted: false, isActive: true }),
+        ProductCategory.countDocuments({ ...filter, isDeleted: false, isActive: false }),
+        ProductCategory.countDocuments({ ...filter, isDeleted: true }),
       ]);
 
       const result: any = pagedResult("categories", categories, total, paging);

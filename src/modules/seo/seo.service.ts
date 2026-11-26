@@ -19,7 +19,7 @@ import {
 } from "../../utils";
 import { SEO_SEED, SEO_SEED_IMAGE } from "./seo.seed";
 import { uploadBase64ToGitHub } from "../../integrations/github";
-import { resolveUserObjectId } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getRoleBasedCreatorFilter, resolveUserObjectId } from "../roles/role.helpers";
 import type { SeoBody, SeoListQuery } from "./seo.types";
 
 const CREATOR = "id fullname email mobile image role";
@@ -139,19 +139,24 @@ export const getSeoList = async (query: SeoListQuery = {}) => {
       };
       if (query.type) filter.type = str(query.type).toLowerCase();
 
+      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
+      if (Object.keys(creatorFilter).length) {
+        Object.assign(filter, creatorFilter);
+      }
+
       const paging = readPagination(query, 20, true);
 
       const [seos, total, active, inactive, trash] = await Promise.all([
         SEO.find(filter)
-          .populate("createdBy", CREATOR)
+          .populate("createdBy", CREATOR_POPULATE)
           .sort({ createdAt: 1 })
           .skip(paging.skip)
           .limit(paging.limit)
           .lean(),
         SEO.countDocuments(filter),
-        SEO.countDocuments({ isDeleted: false, isActive: true }),
-        SEO.countDocuments({ isDeleted: false, isActive: false }),
-        SEO.countDocuments({ isDeleted: true }),
+        SEO.countDocuments({ ...filter, isDeleted: false, isActive: true }),
+        SEO.countDocuments({ ...filter, isDeleted: false, isActive: false }),
+        SEO.countDocuments({ ...filter, isDeleted: true }),
       ]);
 
       const result: any = pagedResult("seos", seos, total, paging);

@@ -18,7 +18,7 @@ import {
   toBool,
   toNumber,
 } from "../../utils";
-import { CREATOR_POPULATE } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getRoleBasedCreatorFilter } from "../roles/role.helpers";
 import type { BlogCategoryBody, BlogCategoryListQuery } from "./blogCategory.types";
 
 const categoryName = (data: BlogCategoryBody) => str(data.categoryName || data.name);
@@ -111,6 +111,10 @@ export const getBlogCategories = async (query: BlogCategoryListQuery = {}) => {
     query as Record<string, unknown>,
     async () => {
       const filter = { ...baseListFilter(query), ...searchFilter(query.search, ["id", "categoryName"]) };
+      const creatorFilter = await getRoleBasedCreatorFilter(query.userId || query.createdBy);
+      if (Object.keys(creatorFilter).length) {
+        Object.assign(filter, creatorFilter);
+      }
       const paging = readPagination(query, 10, true);
 
       const [categories, total, active, inactive, trash] = await Promise.all([
@@ -122,9 +126,9 @@ export const getBlogCategories = async (query: BlogCategoryListQuery = {}) => {
           .limit(paging.limit)
           .lean(),
         BlogCategory.countDocuments(filter),
-        BlogCategory.countDocuments({ isDeleted: false, isActive: true }),
-        BlogCategory.countDocuments({ isDeleted: false, isActive: false }),
-        BlogCategory.countDocuments({ isDeleted: true }),
+        BlogCategory.countDocuments({ ...filter, isDeleted: false, isActive: true }),
+        BlogCategory.countDocuments({ ...filter, isDeleted: false, isActive: false }),
+        BlogCategory.countDocuments({ ...filter, isDeleted: true }),
       ]);
 
       const result: any = pagedResult("categories", categories, total, paging);

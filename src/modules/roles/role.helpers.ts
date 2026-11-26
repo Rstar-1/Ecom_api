@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { roles } from "../../constants";
 import { Role, type RoleDocument } from "./role.model";
 import { User, type UserDocument } from "../users/user.model";
@@ -96,5 +97,110 @@ export const resolveUserObjectId = async (identifier: unknown): Promise<string |
     return u?._id ? (u._id as any).toString() : undefined;
   } catch {
     return undefined;
+  }
+};
+
+/**
+ * Role-based Creator filter:
+ * - If user is Admin, Dev Admin, or has Full_Access, no filter is applied (sees all data across all roles).
+ * - If user has any other custom role, only sees their own added data + admin-added data.
+ */
+export const getRoleBasedCreatorFilter = async (identifier?: unknown): Promise<Record<string, unknown>> => {
+  if (!identifier) return {};
+  const strId = String(identifier).trim();
+  if (!strId) return {};
+
+  try {
+    const isHex = /^[a-f\d]{24}$/i.test(strId);
+    const targetUser = await User.findOne({
+      $or: [
+        ...(isHex ? [{ _id: new mongoose.Types.ObjectId(strId) }] : []),
+        { id: strId },
+        { email: strId.toLowerCase() },
+        { mobile: strId },
+      ],
+    })
+      .select("_id id role roleId")
+      .populate("roleId", "rolename permissions pages")
+      .lean();
+
+    if (!targetUser) return {};
+
+    const roleName = String(
+      (targetUser as any).roleId?.rolename || (targetUser as any).role || ""
+    )
+      .toLowerCase()
+      .trim();
+
+    const permissions: string[] = Array.isArray((targetUser as any).roleId?.permissions)
+      ? (targetUser as any).roleId.permissions
+      : [];
+    const isFullAccess =
+      permissions.includes("Full_Access") ||
+      permissions.includes("*") ||
+      roleName === "admin" ||
+      roleName.includes("admin") ||
+      roleName === "dev admin" ||
+      roleName === "dev_admin" ||
+      roleName === "devadmin" ||
+      roleName === "super admin" ||
+      roleName === "super_admin";
+
+    // Admin, Dev Admin, and Full_Access roles see all data across all roles
+    if (isFullAccess) {
+      return {};
+    }
+
+    // Find all Admin / Dev Admin / Full_Access roles in the system
+    const adminRoles = await Role.find({
+      $or: [
+        { rolename: { $in: ["admin", "dev admin", "dev_admin", "devadmin", "super admin", "super_admin"] } },
+        { permissions: { $in: ["Full_Access", "*"] } },
+      ],
+      isDeleted: false,
+    }).select("_id");
+    const adminRoleIds = adminRoles.map((r) => r._id);
+
+    // Find all Admin / Dev Admin users in the system
+    const adminUsers = await User.find({
+      $or: [
+        { role: { $in: ["admin", "dev admin", "dev_admin", "devadmin", "super admin", "super_admin"] } },
+        { roleId: { $in: adminRoleIds } },
+      ],
+      isDeleted: false,
+    })
+      .select("_id")
+      .lean();
+
+    const rawIds = [targetUser._id, ...adminUsers.map((u) => u._id)].filter(Boolean);
+    const allowedObjectIds: mongoose.Types.ObjectId[] = [];
+    const seen = new Set<string>();
+
+    for (const raw of rawIds) {
+      const s = String(raw);
+      if (/^[a-f\d]{24}$/i.test(s) && !seen.has(s)) {
+        seen.add(s);
+        allowedObjectIds.push(new mongoose.Types.ObjectId(s));
+      }
+    }
+
+    if (!allowedObjectIds.length) {
+      return {
+        $or: [
+          { createdBy: null },
+          { createdBy: { $exists: false } },
+        ],
+      };
+    }
+
+    return {
+      $or: [
+        { createdBy: { $in: allowedObjectIds } },
+        { createdBy: null },
+        { createdBy: { $exists: false } },
+      ],
+    };
+  } catch {
+    return {};
   }
 };
