@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { Product } from "../products/product.model";
 import { ProductCategory } from "./category.model";
 import {
@@ -19,7 +20,7 @@ import {
   toNumber,
   type Filter,
 } from "../../utils";
-import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getCreatorOrAdminFilter, resolveUserObjectId } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { CategoryBody, CategoryListQuery } from "./category.types";
 
@@ -37,12 +38,15 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
   if (!name) throw AppError.badRequest("Category name is required");
 
   const storedImage = data.image !== undefined ? await uploadBase64ToGitHub(data.image, name) : undefined;
+  const resolvedCreatedBy = (await resolveUserObjectId(createdBy || (data as any).createdBy || (data as any).userId)) || createdBy;
+  const creatorScope = resolvedCreatedBy ? { createdBy: resolvedCreatedBy as any } : {};
 
   const existing = await ProductCategory.findOne({
     $or: [
       { categoryName: exactCi(name) },
       ...(data.id ? [{ id: str(data.id) }] : []),
     ],
+    ...creatorScope,
   });
 
   if (existing) {
@@ -67,6 +71,9 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
   const id = str(data.id);
   const slug = (str(data.slug) || name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
+  const rawVendorBy = data.vendorBy || (data as any).VendorBy;
+  const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+
   try {
     const category = await ProductCategory.create({
       ...(id ? { id } : {}),
@@ -78,6 +85,7 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
       count: toNumber(data.count),
       isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
       createdBy,
+      vendorBy: vendorById ? new mongoose.Types.ObjectId(vendorById) : null,
     });
     cache.invalidate("categories");
     cache.invalidate("categories_counts");
@@ -85,12 +93,14 @@ export const createCategory = async (data: CategoryBody, createdBy: string) => {
     logger.info(`CATEGORY_CREATED: ${category.categoryName} (${category.id})`);
     try {
       await category.populate("createdBy", CREATOR_POPULATE);
+      await category.populate("vendorBy", CREATOR_POPULATE);
     } catch {}
     return category;
   } catch (err: any) {
     if (err?.code === 11000) {
       const conflict = await ProductCategory.findOne({
         $or: [{ categoryName: exactCi(name) }, ...(id ? [{ id }] : [])],
+        ...creatorScope,
       });
       if (conflict) {
         conflict.isDeleted = false;
@@ -152,8 +162,9 @@ export const getCategories = async (query: CategoryListQuery = {}) => {
 
       const [categories, total, active, inactive, trash] = await Promise.all([
         ProductCategory.find(filter)
-          .select("id categoryName slug description image iconName count isActive isDeleted createdBy createdAt updatedAt")
+          .select("id categoryName slug description image iconName count isActive isDeleted createdBy vendorBy createdAt updatedAt")
           .populate("createdBy", CREATOR_POPULATE)
+          .populate("vendorBy", CREATOR_POPULATE)
           .sort({ createdAt: -1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -176,6 +187,7 @@ export const getCategories = async (query: CategoryListQuery = {}) => {
 export const getCategoryById = async (identifier: string) => {
   const category = await findCategory(identifier);
   await category.populate("createdBy", CREATOR_POPULATE);
+  await category.populate("vendorBy", CREATOR_POPULATE);
   const count = await Product.countDocuments({ categoryId: category._id, isDeleted: false });
   return { ...category.toObject(), count };
 };
@@ -183,6 +195,12 @@ export const getCategoryById = async (identifier: string) => {
 /* ================= UPDATE ================= */
 export const updateCategory = async (identifier: string, data: CategoryBody) => {
   const category = await findCategory(identifier);
+
+  const rawVendorBy = data.vendorBy !== undefined ? data.vendorBy : (data as any).VendorBy;
+  if (rawVendorBy !== undefined) {
+    const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+    category.set("vendorBy", vendorById ? new mongoose.Types.ObjectId(vendorById) : null);
+  }
 
   const name = categoryName(data);
   if (name) {
@@ -211,6 +229,7 @@ export const updateCategory = async (identifier: string, data: CategoryBody) => 
   cache.invalidate("categories_counts");
   cache.invalidate("categories_status_counts");
   logger.info(`CATEGORY_UPDATED: ${category.categoryName} (${category.id})`);
+  await category.populate("vendorBy", CREATOR_POPULATE);
   return category.populate("createdBy", CREATOR_POPULATE);
 };
 

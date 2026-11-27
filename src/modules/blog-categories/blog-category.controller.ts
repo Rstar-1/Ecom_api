@@ -2,7 +2,7 @@ import { HTTP_STATUS } from "../../constants";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { getAuthUser, successResponse, toBool } from "../../utils";
 import { resolveUserObjectId } from "../roles/role.helpers";
-import type { BlogCategoryBody, BlogCategoryListQuery } from "./blogCategory.types";
+import type { BlogCategoryBody, BlogCategoryListQuery } from "./blog-category.types";
 import * as service from "./blog-category.service";
 
 /* POST /api/blog-categories */

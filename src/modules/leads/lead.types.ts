@@ -26,6 +26,8 @@ export interface LeadBody {
   publishedStatus?: boolean | string | number;
   isActive?: boolean | string | number;
   isDeleted?: boolean | string;
+  vendorBy?: string | unknown;
+  VendorBy?: string | unknown;
 }
 
 export interface LeadListQuery extends ListQuery {

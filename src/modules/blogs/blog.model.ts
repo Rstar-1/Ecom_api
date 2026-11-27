@@ -19,16 +19,19 @@ const blogSchema = new Schema(
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    vendorBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   withVirtuals
 );
 
 aliasVirtual(blogSchema, "name", "blogName");
 aliasVirtual(blogSchema, "title", "blogName");
+aliasVirtual(blogSchema, "VendorBy", "vendorBy");
 applySequentialId(blogSchema, "BLOG", "blogs");
 
 blogSchema.index({ isDeleted: 1, isActive: 1, createdAt: -1 });
 blogSchema.index({ categoryId: 1, isDeleted: 1 });
+blogSchema.index({ vendorBy: 1 });
 
 export const Blog = model("Blog", blogSchema, "blogs");
 export type IBlog = InferSchemaType<typeof blogSchema>;

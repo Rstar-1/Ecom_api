@@ -14,15 +14,18 @@ const productCategorySchema = new Schema(
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    vendorBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   withVirtuals
 );
 
 aliasVirtual(productCategorySchema, "name", "categoryName");
+aliasVirtual(productCategorySchema, "VendorBy", "vendorBy");
 applySequentialId(productCategorySchema, "PCAT", "categories");
 
 productCategorySchema.index({ isDeleted: 1, isActive: 1, createdAt: -1 });
 productCategorySchema.index({ categoryName: 1 });
+productCategorySchema.index({ vendorBy: 1 });
 
 export const ProductCategory = model("ProductCategory", productCategorySchema, "categories");
 export type IProductCategory = InferSchemaType<typeof productCategorySchema>;

@@ -17,6 +17,8 @@ export interface BlogBody {
   isActive?: boolean | string;
   isDeleted?: boolean | string;
   createdBy?: string;
+  vendorBy?: string | unknown;
+  VendorBy?: string | unknown;
 }
 
 export interface BlogListQuery extends ListQuery {

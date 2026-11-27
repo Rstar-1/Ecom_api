@@ -18,7 +18,9 @@ import {
   toNumber,
   type Filter,
 } from "../../utils";
-import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
+import { CREATOR_POPULATE, resolveUserObjectId } from "../roles/role.helpers";
+import { Role } from "../roles/role.model";
+import { User } from "../users/user.model";
 import type { LeadBody, LeadListQuery } from "./lead.types";
 
 const isSeverity = (value: string): value is LeadSeverity => (LEAD_SEVERITIES as readonly string[]).includes(value);
@@ -41,6 +43,82 @@ const findLead = async (identifier: string) => {
   return lead;
 };
 
+/**
+ * Access filter for Leads:
+ * - Admin/DevAdmin sees all leads.
+ * - Non-admin vendor sees:
+ *   1. Leads assigned to them (vendorBy: userObjId)
+ *   2. Leads created by them (createdBy: userObjId)
+ *   3. Leads created by admin or system unassigned to any specific vendor (vendorBy: null or undefined)
+ */
+export const getLeadAccessFilter = async (
+  userIdOrIdentifier?: unknown
+): Promise<Filter | null> => {
+  if (!userIdOrIdentifier) return null;
+  const userObjectId = await resolveUserObjectId(userIdOrIdentifier);
+  if (!userObjectId) return null;
+
+  // Check if requesting user is Admin
+  const requestingUser = await User.findById(userObjectId).populate("roleId").lean();
+  if (requestingUser) {
+    const roleName = String(
+      (requestingUser.roleId as any)?.rolename ||
+      (requestingUser.roleId as any)?.name ||
+      requestingUser.role ||
+      ""
+    ).toLowerCase().trim();
+    const permissions = (requestingUser.roleId as any)?.permissions || [];
+    if (
+      roleName === "admin" ||
+      roleName === "dev_admin" ||
+      roleName === "devadmin" ||
+      roleName === "dev admin" ||
+      roleName.includes("admin") ||
+      (Array.isArray(permissions) && (permissions.includes("Full_Access") || permissions.includes("*")))
+    ) {
+      return null; // Admin sees all data
+    }
+  }
+
+  // Find all Admin role IDs
+  const adminRoles = await Role.find({
+    $or: [
+      { rolename: { $in: ["admin", "dev_admin", "devadmin", "dev admin", "administrator"] } },
+      { name: { $in: ["admin", "dev_admin", "devadmin", "dev admin", "administrator"] } },
+      { permissions: { $in: ["Full_Access", "*"] } },
+    ],
+  }).select("_id").lean();
+  const adminRoleIds = adminRoles.map((r) => r._id);
+
+  // Find all Admin user ObjectIds
+  const adminUsers = await User.find({
+    $or: [
+      { role: { $in: ["admin", "dev_admin", "devadmin", "dev admin", "administrator"] } },
+      { roleId: { $in: adminRoleIds } },
+    ],
+  }).select("_id").lean();
+
+  const userObjId = new mongoose.Types.ObjectId(userObjectId);
+  const adminObjectIds: mongoose.Types.ObjectId[] = adminUsers
+    .map((u: any) => u._id)
+    .filter((id: any) => mongoose.Types.ObjectId.isValid(String(id)))
+    .map((id: any) => (id instanceof mongoose.Types.ObjectId ? id : new mongoose.Types.ObjectId(String(id))));
+
+  return {
+    $or: [
+      // 1. Explicitly assigned to this vendor:
+      { vendorBy: userObjId },
+      // 2. Created by this vendor:
+      { createdBy: userObjId },
+      // 3. Created by admin or unassigned public leads that have NO specific vendor assigned:
+      {
+        createdBy: { $in: [...adminObjectIds, null] },
+        vendorBy: { $in: [null, undefined] },
+      },
+    ],
+  };
+};
+
 /* ================= CREATE ================= */
 export const createLead = async (data: LeadBody, createdBy?: string) => {
   const f = fields(data);
@@ -58,9 +136,16 @@ export const createLead = async (data: LeadBody, createdBy?: string) => {
     }
   }
 
-  if (mobile && (await Lead.exists({ mobile, isDeleted: false }))) {
+  const resolvedCreatedBy = (await resolveUserObjectId(createdBy || (data as any).createdBy || (data as any).userId)) || (createdBy && isObjectId(createdBy) ? createdBy : undefined);
+  const creatorId = resolvedCreatedBy ? new mongoose.Types.ObjectId(resolvedCreatedBy) : null;
+  const creatorScope = creatorId ? { createdBy: creatorId } : {};
+  if (mobile && (await Lead.exists({ mobile, isDeleted: false, ...creatorScope }))) {
     throw AppError.conflict(`Lead with mobile ${mobile} already exists`);
   }
+
+  const rawVendorBy = data.vendorBy || (data as any).VendorBy;
+  const resolvedVendorBy = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+  const vendorById = resolvedVendorBy ? new mongoose.Types.ObjectId(resolvedVendorBy) : null;
 
   const severity = str(data.severity).toLowerCase();
   const notes = str(f.notes);
@@ -85,11 +170,13 @@ export const createLead = async (data: LeadBody, createdBy?: string) => {
     notes,
     severity: isSeverity(severity) ? severity : "low",
     isActive: f.active !== undefined ? toBool(f.active) : true,
-    createdBy: createdBy && isObjectId(createdBy) ? new mongoose.Types.ObjectId(createdBy) : null,
+    createdBy: creatorId,
+    vendorBy: vendorById,
   });
   await lead.save();
 
   if (lead.createdBy) await lead.populate("createdBy", CREATOR_POPULATE);
+  if (lead.vendorBy) await lead.populate("vendorBy", CREATOR_POPULATE);
   if (lead.products?.length) await lead.populate("products", "id productName price image");
   cache.invalidate("leads");
   logger.info(`LEAD_CREATED: ${lead.name} (${lead.id})`);
@@ -117,7 +204,7 @@ export const getLeads = async (query: LeadListQuery = {}) => {
         filter.category = normalizedCat;
       }
 
-      const creatorScope = await getCreatorOrAdminFilter(query.userId || query.createdBy);
+      const creatorScope = await getLeadAccessFilter(query.userId || query.createdBy);
       if (creatorScope) {
         if (filter.$or) {
           const searchOr = filter.$or;
@@ -131,6 +218,7 @@ export const getLeads = async (query: LeadListQuery = {}) => {
       const paging = readPagination(query, 10, true);
       const base = Lead.find(filter)
         .populate("createdBy", CREATOR_POPULATE)
+        .populate("vendorBy", CREATOR_POPULATE)
         .populate("products", "id productName price image")
         .sort({ createdAt: -1 });
 
@@ -173,6 +261,7 @@ export const getLeads = async (query: LeadListQuery = {}) => {
 export const getLeadById = async (identifier: string) =>
   (await findLead(identifier)).populate([
     { path: "createdBy", select: CREATOR_POPULATE },
+    { path: "vendorBy", select: CREATOR_POPULATE },
     { path: "products", select: "id productName price image" },
   ]);
 
@@ -200,6 +289,12 @@ export const updateLead = async (identifier: string, data: LeadBody) => {
     lead.set("quantity", toNumber(data.quantity, 1));
   }
 
+  const rawVendorBy = data.vendorBy !== undefined ? data.vendorBy : (data as any).VendorBy;
+  if (rawVendorBy !== undefined) {
+    const resolvedVendorBy = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+    lead.set("vendorBy", resolvedVendorBy ? new mongoose.Types.ObjectId(resolvedVendorBy) : null);
+  }
+
   if (f.name !== undefined) lead.name = str(f.name);
   if (f.mobile !== undefined) lead.mobile = str(f.mobile);
   if (f.email !== undefined) lead.email = str(f.email).toLowerCase();
@@ -218,6 +313,7 @@ export const updateLead = async (identifier: string, data: LeadBody) => {
   await lead.save();
   cache.invalidate("leads");
   if (lead.createdBy) await lead.populate("createdBy", CREATOR_POPULATE);
+  if (lead.vendorBy) await lead.populate("vendorBy", CREATOR_POPULATE);
   if (lead.products?.length) await lead.populate("products", "id productName price image");
   logger.info(`LEAD_UPDATED: ${lead.name} (${lead.id})`);
   return lead;

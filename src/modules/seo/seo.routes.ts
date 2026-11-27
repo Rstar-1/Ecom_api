@@ -9,7 +9,6 @@ import {
   getSeoByPage,
   getSeoByPath,
   getSeoList,
-  seedSeo,
   updateSeo,
   uploadImage,
 } from "./seo.controller";
@@ -24,7 +23,6 @@ router.get("/page/:page", getSeoByPage);
 
 /* Dashboard */
 router.post("/upload", ...canManage, upload.single("image"), uploadImage);
-router.post("/seed", ...canManage, seedSeo);
 router.post("/bulk-delete", ...canManage, bulkDeleteSeo);
 router.delete("/bulk-delete", ...canManage, bulkDeleteSeo);
 router.post("/", ...canManage, upload.single("image"), createSeo);

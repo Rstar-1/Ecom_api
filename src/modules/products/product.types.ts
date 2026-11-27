@@ -25,6 +25,8 @@ export interface ProductBody {
   isActive?: boolean | string;
   isDeleted?: boolean | string;
   createdBy?: string;
+  vendorBy?: string | unknown;
+  VendorBy?: string | unknown;
 }
 
 export interface ProductListQuery extends ListQuery {

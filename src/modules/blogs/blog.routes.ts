@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { PERMISSIONS } from "../../constants";
 import { authMiddleware, checkPermission, upload } from "../../middlewares";
-import blogCategoryRoutes from "../blog-categories/blogCategory.routes";
+import blogCategoryRoutes from "../blog-categories/blog-category.routes";
 import {
   addReview,
   bulkDeleteBlogs,

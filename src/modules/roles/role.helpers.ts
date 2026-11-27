@@ -88,7 +88,19 @@ export const CREATOR_POPULATE = "id fullname email mobile image role";
 
 export const resolveUserObjectId = async (identifier: unknown): Promise<string | undefined> => {
   if (!identifier) return undefined;
-  const strId = String(identifier).trim();
+  let strId = "";
+  if (typeof identifier === "object" && identifier !== null) {
+    strId = String(
+      (identifier as any)._id ||
+      (identifier as any).value ||
+      (identifier as any).id ||
+      (identifier as any).userId ||
+      ""
+    ).trim();
+  } else {
+    strId = String(identifier).trim();
+  }
+  if (!strId || strId === "[object Object]") return undefined;
   if (/^[a-f\d]{24}$/i.test(strId)) return strId;
   try {
     const u = await User.findOne({
@@ -155,23 +167,28 @@ export const getCreatorOrAdminFilter = async (
     ],
   }).select("_id").lean();
 
-  const allowedObjectIds: mongoose.Types.ObjectId[] = [];
-  if (userObjectId && mongoose.Types.ObjectId.isValid(userObjectId)) {
-    allowedObjectIds.push(new mongoose.Types.ObjectId(userObjectId));
-  }
-
-  for (const u of adminUsers) {
-    const rawId = (u as any)?._id;
-    if (rawId && mongoose.Types.ObjectId.isValid(String(rawId))) {
-      allowedObjectIds.push(rawId instanceof mongoose.Types.ObjectId ? rawId : new mongoose.Types.ObjectId(String(rawId)));
-    }
-  }
+  const userObjId = new mongoose.Types.ObjectId(userObjectId);
+  const adminObjectIds: mongoose.Types.ObjectId[] = adminUsers
+    .map((u: any) => u._id)
+    .filter((id: any) => mongoose.Types.ObjectId.isValid(String(id)))
+    .map((id: any) => (id instanceof mongoose.Types.ObjectId ? id : new mongoose.Types.ObjectId(String(id))));
 
   return {
     $or: [
-      { createdBy: { $in: allowedObjectIds } },
-      { createdBy: null },
-      { createdBy: { $exists: false } },
+      // 1. Explicitly assigned to this vendor:
+      { vendorBy: userObjId },
+      // 2. Created by this vendor:
+      { createdBy: userObjId },
+      // 3. Created by admin or system unassigned to any specific vendor:
+      {
+        createdBy: { $in: [...adminObjectIds, null] },
+        vendorBy: { $in: [null, undefined] },
+      },
+      // 4. Default unassigned items where createdBy does not exist:
+      {
+        createdBy: { $exists: false },
+        vendorBy: { $in: [null, undefined] },
+      },
     ],
   };
 };

@@ -3,8 +3,6 @@ import { fileUrl } from "../../middlewares";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { AppError, getAuthUser, successResponse, toBool } from "../../utils";
 import type {
-  SeedBody,
-  SeedQuery,
   SeoBody,
   SeoDeleteQuery,
   SeoListQuery,
@@ -21,7 +19,12 @@ const withImage = (body: SeoBody | undefined, file: Express.Multer.File | undefi
 /* POST /api/seo (JSON or multipart with `image`) */
 export const createSeo: ApiHandler<EmptyParams, SeoBody> = async (req, res, next) => {
   try {
-    const data = await service.createSeo(withImage(req.body, req.file), getAuthUser(req).id);
+    const authId = getAuthUser(req).id;
+    const creator =
+      (await service.resolveUserObjectId(req.body?.createdBy || (req.body as any)?.userId)) ||
+      (await service.resolveUserObjectId(authId)) ||
+      authId;
+    const data = await service.createSeo(withImage(req.body, req.file), creator);
     successResponse(res, data, "SEO configuration created", HTTP_STATUS.CREATED);
   } catch (error) {
     next(error);
@@ -93,17 +96,6 @@ export const bulkDeleteSeo: ApiHandler<EmptyParams, unknown> = async (req, res, 
   try {
     const data = await service.bulkDeleteSeo(req.body);
     successResponse(res, data, "SEO configurations deleted successfully");
-  } catch (error) {
-    next(error);
-  }
-};
-
-/* POST /api/seo/seed?force=true */
-export const seedSeo: ApiHandler<EmptyParams, SeedBody, SeedQuery> = async (req, res, next) => {
-  try {
-    const force = toBool(req.query.force) || toBool(req.body?.force);
-    const data = await service.seedInitialSeo(force, getAuthUser(req).id);
-    successResponse(res, data, "SEO seed executed");
   } catch (error) {
     next(error);
   }

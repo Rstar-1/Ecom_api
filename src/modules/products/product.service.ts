@@ -34,13 +34,14 @@ const invalidateProductCaches = () => {
   cache.invalidate("categories_counts");
   cache.invalidate("categories_status_counts");
 };
-import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getCreatorOrAdminFilter, resolveUserObjectId } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { ProductBody, ProductListQuery } from "./product.types";
 
 const POPULATE = [
   { path: "categoryId", select: "id categoryName count" },
   { path: "createdBy", select: CREATOR_POPULATE },
+  { path: "vendorBy", select: CREATOR_POPULATE },
   { path: "reviews.createdBy", select: CREATOR_POPULATE },
 ];
 
@@ -95,6 +96,9 @@ export const createProduct = async (data: ProductBody, createdBy: string) => {
   const id = str(data.id);
   if (id && (await Product.exists({ id }))) throw AppError.conflict(`Product with ID ${id} already exists`);
 
+  const rawVendorBy = data.vendorBy || (data as any).VendorBy;
+  const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+
   const storedImage = data.image ? await uploadBase64ToGitHub(data.image, productName) : "";
   const rawImages = parseList<string>(data.images);
   const storedImages = await Promise.all(
@@ -122,6 +126,7 @@ export const createProduct = async (data: ProductBody, createdBy: string) => {
     reviews: parseList<ReviewInput>(data.reviews).map((r) => toReview(r, createdBy)),
     isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
     createdBy,
+    vendorBy: vendorById ? new mongoose.Types.ObjectId(vendorById) : null,
   });
 
   await changeCategoryCount(categoryId, 1);
@@ -171,9 +176,10 @@ export const getProducts = async (query: ProductListQuery = {}) => {
 
       const [products, total, active, inactive, trash] = await Promise.all([
         Product.find(filter)
-          .select("id productName shortDesc description price unit currency totalStock reservedStock discount categoryId severity isTrending stockStatus image images badges specifications isActive isDeleted createdBy createdAt updatedAt")
+          .select("id productName shortDesc description price unit currency totalStock reservedStock discount categoryId severity isTrending stockStatus image images badges specifications isActive isDeleted createdBy vendorBy createdAt updatedAt")
           .populate("categoryId", "id categoryName")
           .populate("createdBy", CREATOR_POPULATE)
+          .populate("vendorBy", CREATOR_POPULATE)
           .sort({ createdAt: -1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -198,6 +204,12 @@ export const getProductById = async (identifier: string) => (await findProduct(i
 /* ================= UPDATE ================= */
 export const updateProduct = async (identifier: string, data: ProductBody) => {
   const product = await findProduct(identifier);
+
+  const rawVendorBy = data.vendorBy !== undefined ? data.vendorBy : (data as any).VendorBy;
+  if (rawVendorBy !== undefined) {
+    const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+    product.set("vendorBy", vendorById ? new mongoose.Types.ObjectId(vendorById) : null);
+  }
 
   if (str(data.productName)) product.productName = str(data.productName);
   if (data.description !== undefined) product.description = str(data.description);

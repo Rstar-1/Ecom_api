@@ -29,13 +29,14 @@ const invalidateBlogCaches = () => {
   cache.invalidate("blog_categories_counts");
   cache.invalidate("blog_categories_status_counts");
 };
-import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
+import { CREATOR_POPULATE, getCreatorOrAdminFilter, resolveUserObjectId } from "../roles/role.helpers";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import type { BlogBody, BlogListQuery } from "./blog.types";
 
 const POPULATE = [
   { path: "categoryId", select: "id categoryName count" },
   { path: "createdBy", select: CREATOR_POPULATE },
+  { path: "vendorBy", select: CREATOR_POPULATE },
   { path: "reviews.createdBy", select: CREATOR_POPULATE },
 ];
 
@@ -78,6 +79,9 @@ export const createBlog = async (data: BlogBody, createdBy: string) => {
   const id = str(data.id);
   if (id && (await Blog.exists({ id }))) throw AppError.conflict(`Blog with ID ${id} already exists`);
 
+  const rawVendorBy = data.vendorBy || (data as any).VendorBy;
+  const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+
   const storedImage = data.image ? await uploadBase64ToGitHub(data.image, blogName) : "";
 
   const blog = await Blog.create({
@@ -93,6 +97,7 @@ export const createBlog = async (data: BlogBody, createdBy: string) => {
     specifications: parseList<SpecificationInput>(data.specifications),
     isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
     createdBy,
+    vendorBy: vendorById ? new mongoose.Types.ObjectId(vendorById) : null,
   });
 
   await changeCategoryCount(categoryId, 1);
@@ -139,9 +144,10 @@ export const getBlogs = async (query: BlogListQuery = {}) => {
 
       const [blogs, total, active, inactive, trash] = await Promise.all([
         Blog.find(filter)
-          .select("id blogName shortDesc description quote readTime image categoryId isActive isDeleted createdBy createdAt updatedAt")
+          .select("id blogName shortDesc description quote readTime image categoryId isActive isDeleted createdBy vendorBy createdAt updatedAt")
           .populate("categoryId", "id categoryName")
           .populate("createdBy", CREATOR_POPULATE)
+          .populate("vendorBy", CREATOR_POPULATE)
           .sort({ createdAt: -1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -166,6 +172,12 @@ export const getBlogById = async (identifier: string) => (await findBlog(identif
 /* ================= UPDATE ================= */
 export const updateBlog = async (identifier: string, data: BlogBody) => {
   const blog = await findBlog(identifier);
+
+  const rawVendorBy = data.vendorBy !== undefined ? data.vendorBy : (data as any).VendorBy;
+  if (rawVendorBy !== undefined) {
+    const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+    blog.set("vendorBy", vendorById ? new mongoose.Types.ObjectId(vendorById) : null);
+  }
 
   if (str(data.blogName)) blog.blogName = str(data.blogName);
   if (str(data.description)) blog.description = str(data.description);

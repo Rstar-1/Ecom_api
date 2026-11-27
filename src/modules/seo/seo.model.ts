@@ -1,6 +1,6 @@
 import { Schema, model, type InferSchemaType } from "mongoose";
 import { applySequentialId } from "../../utils/crud";
-import { withVirtuals } from "../../utils";
+import { aliasVirtual, withVirtuals } from "../../utils";
 
 export const SEO_TYPES = ["website", "article", "product", "business"] as const;
 export type SeoType = (typeof SEO_TYPES)[number];
@@ -29,14 +29,17 @@ const seoSchema = new Schema(
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    vendorBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   withVirtuals
 );
 
+aliasVirtual(seoSchema, "VendorBy", "vendorBy");
 applySequentialId(seoSchema, "SEO", "seos");
 
 seoSchema.index({ isDeleted: 1, createdAt: -1 });
 seoSchema.index({ page: 1 });
+seoSchema.index({ vendorBy: 1 });
 
 seoSchema.pre("validate", function () {
   if (!this.page && this.name) this.page = this.name;

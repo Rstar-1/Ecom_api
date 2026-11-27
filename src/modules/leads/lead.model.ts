@@ -36,6 +36,7 @@ const leadSchema = new Schema(
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    vendorBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   withVirtuals
 );
@@ -44,6 +45,7 @@ aliasVirtual(leadSchema, "leadFullName", "name");
 aliasVirtual(leadSchema, "mobileNumber", "mobile");
 aliasVirtual(leadSchema, "emailAddress", "email");
 aliasVirtual(leadSchema, "publishedStatus", "isActive");
+aliasVirtual(leadSchema, "VendorBy", "vendorBy");
 leadSchema.virtual("requirementDetails").get(function () {
   return this.notes || this.description;
 });

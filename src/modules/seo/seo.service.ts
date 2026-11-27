@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { SEO, SEO_TYPES, type BreadcrumbInput, type SeoType } from "./seo.model";
 import {
   AppError,
@@ -17,9 +18,9 @@ import {
   toBool,
   type Filter,
 } from "../../utils";
-import { SEO_SEED, SEO_SEED_IMAGE } from "./seo.seed";
 import { uploadBase64ToGitHub } from "../../integrations/github";
 import { resolveUserObjectId, getCreatorOrAdminFilter } from "../roles/role.helpers";
+export { resolveUserObjectId };
 import type { SeoBody, SeoListQuery } from "./seo.types";
 
 const CREATOR = "id fullname email mobile image role";
@@ -43,38 +44,7 @@ const findSeo = async (identifier: string) => {
   return seo;
 };
 
-/* ================= SEED (only when empty unless force=true) ================= */
-export const seedInitialSeo = async (force = false, createdBy?: string) => {
-  const count = await SEO.countDocuments();
-  if (count > 0 && !force) {
-    return { message: `SEO collection already has ${count} records. Pass force=true to re-seed.`, count };
-  }
-
-  const resolvedCreatedBy = createdBy ? (await resolveUserObjectId(createdBy)) || createdBy : null;
-
-  for (const item of SEO_SEED) {
-    await SEO.findOneAndUpdate(
-      { $or: [{ id: item.id }, { name: item.name }] },
-      {
-        ...item,
-        page: item.name,
-        image: SEO_SEED_IMAGE,
-        noindex: false,
-        isActive: true,
-        isDeleted: false,
-        createdBy: resolvedCreatedBy,
-      },
-      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
-    );
-  }
-
-  cache.invalidate("seo");
-  cache.invalidate("seo_status_counts");
-  logger.info(`SEO_INITIAL_SEEDED: ${SEO_SEED.length} pages populated`);
-  return { message: `Successfully seeded ${SEO_SEED.length} SEO records`, count: SEO_SEED.length };
-};
-
-/* ================= CREATE (restores a soft-deleted config with the same name/path) ================= */
+/* ================= CREATE (restores a soft-deleted config with the same name/path for the creator) ================= */
 export const createSeo = async (data: SeoBody, createdBy: string) => {
   const name = str(data.name).toLowerCase();
   const path = str(data.path);
@@ -82,8 +52,9 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
   if (!path) throw AppError.badRequest("URL path is required");
 
   const resolvedCreatedBy = (await resolveUserObjectId(createdBy)) || createdBy;
+  const creatorScope = resolvedCreatedBy ? { createdBy: resolvedCreatedBy as any } : {};
 
-  const existing = await SEO.findOne({ $or: [{ name }, { path }] });
+  const existing = await SEO.findOne({ $or: [{ name }, { path }], ...creatorScope });
   if (existing) {
     if (!existing.isDeleted) throw AppError.conflict(`SEO config for "${name}" or path "${path}" already exists`);
     existing.isDeleted = false;
@@ -106,6 +77,9 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
   const id = str(data.id);
   if (id && (await SEO.exists({ id }))) throw AppError.conflict(`SEO config with ID ${id} already exists`);
 
+  const rawVendorBy = data.vendorBy || (data as any).VendorBy;
+  const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+
   const seo = await SEO.create({
     ...(id ? { id } : {}),
     name,
@@ -114,12 +88,13 @@ export const createSeo = async (data: SeoBody, createdBy: string) => {
     title: str(data.title),
     description: str(data.description),
     keywords: str(data.keywords),
-    image: data.image ? await uploadBase64ToGitHub(str(data.image), `seo-${name}`) : SEO_SEED_IMAGE,
+    image: data.image ? await uploadBase64ToGitHub(str(data.image), `seo-${name}`) : "",
     type: data.type ? toSeoType(data.type) : "website",
     noindex: toBool(data.noindex),
     breadcrumbs: parseBreadcrumbs(data.breadcrumbs),
     isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
     createdBy: resolvedCreatedBy,
+    vendorBy: vendorById ? new mongoose.Types.ObjectId(vendorById) : null,
   });
   cache.invalidate("seo");
   cache.invalidate("seo_status_counts");
@@ -159,6 +134,7 @@ export const getSeoList = async (query: SeoListQuery = {}) => {
       const [seos, total, active, inactive, trash] = await Promise.all([
         SEO.find(filter)
           .populate("createdBy", CREATOR)
+          .populate("vendorBy", CREATOR)
           .sort({ createdAt: 1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -178,7 +154,7 @@ export const getSeoList = async (query: SeoListQuery = {}) => {
 };
 
 /* ================= GET ONE ================= */
-export const getSeoById = async (identifier: string) => (await findSeo(identifier)).populate("createdBy", CREATOR);
+export const getSeoById = async (identifier: string) => (await findSeo(identifier)).populate("createdBy", CREATOR).then((s) => s.populate("vendorBy", CREATOR));
 
 export const getSeoByPage = async (pageName: string) => {
   const clean = str(pageName);
@@ -186,7 +162,7 @@ export const getSeoByPage = async (pageName: string) => {
   const seo = await SEO.findOne({
     $or: [{ name: exactCi(clean) }, { page: exactCi(clean) }, { id: clean }],
     isDeleted: false,
-  }).populate("createdBy", CREATOR);
+  }).populate("createdBy", CREATOR).populate("vendorBy", CREATOR);
   if (!seo) throw AppError.notFound(`SEO configuration for page "${clean}" not found`);
   return seo;
 };
@@ -194,7 +170,7 @@ export const getSeoByPage = async (pageName: string) => {
 export const getSeoByPath = async (urlPath: unknown) => {
   const clean = str(urlPath);
   if (!clean) throw AppError.badRequest("URL path is required");
-  const seo = await SEO.findOne({ path: clean, isDeleted: false }).populate("createdBy", CREATOR);
+  const seo = await SEO.findOne({ path: clean, isDeleted: false }).populate("createdBy", CREATOR).populate("vendorBy", CREATOR);
   if (!seo) throw AppError.notFound(`SEO configuration for path "${clean}" not found`);
   return seo;
 };
@@ -203,9 +179,16 @@ export const getSeoByPath = async (urlPath: unknown) => {
 export const updateSeo = async (identifier: string, data: SeoBody) => {
   const seo = await findSeo(identifier);
 
+  const rawVendorBy = data.vendorBy !== undefined ? data.vendorBy : (data as any).VendorBy;
+  if (rawVendorBy !== undefined) {
+    const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+    seo.set("vendorBy", vendorById ? new mongoose.Types.ObjectId(vendorById) : null);
+  }
+
   const name = str(data.name).toLowerCase();
   if (name) {
-    if (await SEO.exists({ name, _id: { $ne: seo._id }, isDeleted: false })) {
+    const creatorScope = seo.createdBy ? { createdBy: seo.createdBy } : {};
+    if (await SEO.exists({ name, _id: { $ne: seo._id }, isDeleted: false, ...creatorScope })) {
       throw AppError.conflict(`SEO configuration with name "${name}" already exists`);
     }
     seo.name = name;

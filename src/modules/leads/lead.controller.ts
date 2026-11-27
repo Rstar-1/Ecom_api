@@ -1,13 +1,16 @@
 import { HTTP_STATUS } from "../../constants";
 import type { ApiHandler, EmptyParams, IdParams } from "../../types/http";
 import { successResponse, toBool } from "../../utils";
+import { resolveUserObjectId } from "../roles/role.helpers";
 import type { DeleteQuery, LeadBody, LeadListQuery, SeverityBody } from "./lead.types";
 import * as service from "./lead.service";
 
 /* POST /api/leads (public: website contact form; JSON or form-data) */
 export const createLead: ApiHandler<EmptyParams, LeadBody> = async (req, res, next) => {
   try {
-    const data = await service.createLead(req.body ?? {}, req.user?.id);
+    const rawCreator = (req.body as any)?.createdBy || (req.body as any)?.userId || req.user?.id;
+    const creator = (await resolveUserObjectId(rawCreator)) || rawCreator;
+    const data = await service.createLead(req.body ?? {}, creator);
     successResponse(res, data, "Lead created", HTTP_STATUS.CREATED);
   } catch (error) {
     next(error);

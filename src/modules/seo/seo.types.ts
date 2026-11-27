@@ -17,6 +17,8 @@ export interface SeoBody {
   isActive?: boolean | string;
   isDeleted?: boolean | string;
   createdBy?: string;
+  vendorBy?: string | unknown;
+  VendorBy?: string | unknown;
 }
 
 export interface SeoListQuery extends ListQuery {
@@ -34,12 +36,4 @@ export interface SeoPageParams {
 
 export interface SeoDeleteQuery {
   permanent?: string;
-}
-
-export interface SeedQuery {
-  force?: string;
-}
-
-export interface SeedBody {
-  force?: boolean | string;
 }

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { Blog } from "../blogs/blog.model";
 import { BlogCategory } from "./blog-category.model";
 import {
@@ -19,8 +20,8 @@ import {
   toNumber,
   type Filter,
 } from "../../utils";
-import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
-import type { BlogCategoryBody, BlogCategoryListQuery } from "./blogCategory.types";
+import { CREATOR_POPULATE, getCreatorOrAdminFilter, resolveUserObjectId } from "../roles/role.helpers";
+import type { BlogCategoryBody, BlogCategoryListQuery } from "./blog-category.types";
 
 const categoryName = (data: BlogCategoryBody) => str(data.categoryName || data.name);
 
@@ -34,11 +35,15 @@ export const createBlogCategory = async (data: BlogCategoryBody, createdBy: stri
   const name = categoryName(data);
   if (!name) throw AppError.badRequest("Category name is required");
 
+  const resolvedCreatedBy = (await resolveUserObjectId(createdBy || (data as any).createdBy || (data as any).userId)) || createdBy;
+  const creatorScope = resolvedCreatedBy ? { createdBy: resolvedCreatedBy as any } : {};
+
   const existing = await BlogCategory.findOne({
     $or: [
       { categoryName: exactCi(name) },
       ...(data.id ? [{ id: str(data.id) }] : []),
     ],
+    ...creatorScope,
   });
 
   if (existing) {
@@ -58,6 +63,9 @@ export const createBlogCategory = async (data: BlogCategoryBody, createdBy: stri
   }
 
   const id = str(data.id);
+  const rawVendorBy = data.vendorBy || (data as any).VendorBy;
+  const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+
   try {
     const category = await BlogCategory.create({
       ...(id ? { id } : {}),
@@ -65,6 +73,7 @@ export const createBlogCategory = async (data: BlogCategoryBody, createdBy: stri
       count: toNumber(data.count),
       isActive: data.isActive !== undefined ? toBool(data.isActive) : true,
       createdBy,
+      vendorBy: vendorById ? new mongoose.Types.ObjectId(vendorById) : null,
     });
     cache.invalidate("blog_categories");
     cache.invalidate("blog_categories_counts");
@@ -72,12 +81,14 @@ export const createBlogCategory = async (data: BlogCategoryBody, createdBy: stri
     logger.info(`BLOG_CATEGORY_CREATED: ${category.categoryName} (${category.id})`);
     try {
       await category.populate("createdBy", CREATOR_POPULATE);
+      await category.populate("vendorBy", CREATOR_POPULATE);
     } catch {}
     return category;
   } catch (err: any) {
     if (err?.code === 11000) {
       const conflict = await BlogCategory.findOne({
         $or: [{ categoryName: exactCi(name) }, ...(id ? [{ id }] : [])],
+        ...creatorScope,
       });
       if (conflict) {
         conflict.isDeleted = false;
@@ -130,8 +141,9 @@ export const getBlogCategories = async (query: BlogCategoryListQuery = {}) => {
 
       const [categories, total, active, inactive, trash] = await Promise.all([
         BlogCategory.find(filter)
-          .select("id categoryName count isActive isDeleted createdBy createdAt updatedAt")
+          .select("id categoryName count isActive isDeleted createdBy vendorBy createdAt updatedAt")
           .populate("createdBy", CREATOR_POPULATE)
+          .populate("vendorBy", CREATOR_POPULATE)
           .sort({ createdAt: -1 })
           .skip(paging.skip)
           .limit(paging.limit)
@@ -153,12 +165,20 @@ export const getBlogCategories = async (query: BlogCategoryListQuery = {}) => {
 export const getBlogCategoryById = async (identifier: string) => {
   const category = await findCategory(identifier);
   await category.populate("createdBy", CREATOR_POPULATE);
+  await category.populate("vendorBy", CREATOR_POPULATE);
   const count = await Blog.countDocuments({ categoryId: category._id, isDeleted: false });
   return { ...category.toObject(), count };
 };
 
+/* ================= UPDATE ================= */
 export const updateBlogCategory = async (identifier: string, data: BlogCategoryBody) => {
   const category = await findCategory(identifier);
+
+  const rawVendorBy = data.vendorBy !== undefined ? data.vendorBy : (data as any).VendorBy;
+  if (rawVendorBy !== undefined) {
+    const vendorById = rawVendorBy ? await resolveUserObjectId(rawVendorBy) : null;
+    category.set("vendorBy", vendorById ? new mongoose.Types.ObjectId(vendorById) : null);
+  }
 
   const name = categoryName(data);
   if (name) category.categoryName = name;
@@ -179,6 +199,7 @@ export const updateBlogCategory = async (identifier: string, data: BlogCategoryB
   cache.invalidate("blog_categories");
   cache.invalidate("blog_categories_counts");
   logger.info(`BLOG_CATEGORY_UPDATED: ${category.categoryName} (${category.id})`);
+  await category.populate("vendorBy", CREATOR_POPULATE);
   return category.populate("createdBy", CREATOR_POPULATE);
 };
 
