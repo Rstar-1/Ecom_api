@@ -22,6 +22,10 @@ const leadSchema = new Schema(
       type: [{ type: Schema.Types.ObjectId, ref: "Product" }],
       default: [],
     },
+    quantity: {
+      type: Number,
+      default: 1,
+    },
     name: { type: String, default: "", trim: true },
     mobile: { type: String, default: "", trim: true },
     email: { type: String, default: "", trim: true, lowercase: true },

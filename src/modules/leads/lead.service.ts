@@ -15,6 +15,7 @@ import {
   searchFilter,
   str,
   toBool,
+  toNumber,
   type Filter,
 } from "../../utils";
 import { CREATOR_POPULATE, getCreatorOrAdminFilter } from "../roles/role.helpers";
@@ -43,19 +44,26 @@ const findLead = async (identifier: string) => {
 /* ================= CREATE ================= */
 export const createLead = async (data: LeadBody, createdBy?: string) => {
   const f = fields(data);
-  const name = str(f.name);
+  let name = str(f.name);
   const mobile = str(f.mobile);
-  if (!name) throw AppError.badRequest("Lead Full Name is required");
-  if (!mobile) throw AppError.badRequest("Mobile Number is required");
+  const rawCat = str(data.category).toLowerCase();
+  const category: LeadCategory = (LEAD_CATEGORIES as readonly string[]).includes(rawCat) ? (rawCat as LeadCategory) : "enquiry";
 
-  if (await Lead.exists({ mobile, isDeleted: false })) {
+  if (category !== "product") {
+    if (!name) throw AppError.badRequest("Lead Full Name is required");
+    if (!mobile) throw AppError.badRequest("Mobile Number is required");
+  } else {
+    if (!name) {
+      name = "Product Lead";
+    }
+  }
+
+  if (mobile && (await Lead.exists({ mobile, isDeleted: false }))) {
     throw AppError.conflict(`Lead with mobile ${mobile} already exists`);
   }
 
   const severity = str(data.severity).toLowerCase();
   const notes = str(f.notes);
-  const rawCat = str(data.category).toLowerCase();
-  const category: LeadCategory = (LEAD_CATEGORIES as readonly string[]).includes(rawCat) ? (rawCat as LeadCategory) : "enquiry";
 
   let products: mongoose.Types.ObjectId[] = [];
   if (Array.isArray(data.products)) {
@@ -68,6 +76,7 @@ export const createLead = async (data: LeadBody, createdBy?: string) => {
     ...(str(data.id) ? { id: str(data.id) } : {}),
     category,
     products,
+    quantity: toNumber(data.quantity, 1),
     name,
     mobile,
     email: str(f.email).toLowerCase(),
@@ -98,6 +107,15 @@ export const getLeads = async (query: LeadListQuery = {}) => {
         ...searchFilter(query.search, ["id", "name", "mobile", "email", "location", "description", "notes"]),
       };
       if (query.severity) filter.severity = str(query.severity).toLowerCase();
+      if (query.category) {
+        const catStr = str(query.category).toLowerCase().trim();
+        const normalizedCat = (catStr === "orders" || catStr === "product")
+          ? "product"
+          : (catStr === "leads" || catStr === "manual")
+            ? "manual"
+            : catStr;
+        filter.category = normalizedCat;
+      }
 
       const creatorScope = await getCreatorOrAdminFilter(query.userId || query.createdBy);
       if (creatorScope) {
@@ -116,12 +134,13 @@ export const getLeads = async (query: LeadListQuery = {}) => {
         .populate("products", "id productName price image")
         .sort({ createdAt: -1 });
 
-      const activeFilter: Filter = { isDeleted: false, isActive: true, ...(creatorScope ? creatorScope : {}) };
-      const inactiveFilter: Filter = { isDeleted: false, isActive: false, ...(creatorScope ? creatorScope : {}) };
-      const trashFilter: Filter = { isDeleted: true, ...(creatorScope ? creatorScope : {}) };
-      const highFilter: Filter = { isDeleted: false, severity: "high", ...(creatorScope ? creatorScope : {}) };
-      const mediumFilter: Filter = { isDeleted: false, severity: "medium", ...(creatorScope ? creatorScope : {}) };
-      const lowFilter: Filter = { isDeleted: false, severity: "low", ...(creatorScope ? creatorScope : {}) };
+      const categoryScope = filter.category ? { category: filter.category } : {};
+      const activeFilter: Filter = { isDeleted: false, isActive: true, ...categoryScope, ...(creatorScope ? creatorScope : {}) };
+      const inactiveFilter: Filter = { isDeleted: false, isActive: false, ...categoryScope, ...(creatorScope ? creatorScope : {}) };
+      const trashFilter: Filter = { isDeleted: true, ...categoryScope, ...(creatorScope ? creatorScope : {}) };
+      const highFilter: Filter = { isDeleted: false, severity: "high", ...categoryScope, ...(creatorScope ? creatorScope : {}) };
+      const mediumFilter: Filter = { isDeleted: false, severity: "medium", ...categoryScope, ...(creatorScope ? creatorScope : {}) };
+      const lowFilter: Filter = { isDeleted: false, severity: "low", ...categoryScope, ...(creatorScope ? creatorScope : {}) };
 
       const [leads, total, active, inactive, trash, high, medium, low] = await Promise.all([
         base.skip(paging.skip).limit(paging.limit).lean(),
@@ -176,6 +195,9 @@ export const updateLead = async (identifier: string, data: LeadBody) => {
       products = [new mongoose.Types.ObjectId(data.products)];
     }
     lead.set("products", products);
+  }
+  if (data.quantity !== undefined) {
+    lead.set("quantity", toNumber(data.quantity, 1));
   }
 
   if (f.name !== undefined) lead.name = str(f.name);

@@ -5,6 +5,7 @@ export interface LeadBody {
   id?: string;
   category?: string;
   products?: string[] | unknown;
+  quantity?: number | string;
   name?: string;
   leadFullName?: string;
   fullName?: string;
